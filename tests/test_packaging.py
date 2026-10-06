@@ -90,6 +90,92 @@ class TestPackaging:
 
 
 # ---------------------------------------------------------------------------
+# requirements 文件必须是合法的 pip 文件
+# ---------------------------------------------------------------------------
+class TestRequirementsFiles:
+    """回归：requirements.txt 曾被写成「命令速查表」。
+
+    每行是 `pip install log-ai-compressor` 这种 shell 命令，于是
+    `pip install -r requirements.txt`（CI 第一步）报
+    `Invalid requirement: 'pip install log-ai-compressor'`，
+    三个 job 全挂在 Install dependencies，后面 Lint / Test 全被 skipped。
+    这里逐行按 PEP 508 解析，把这个坑钉死。
+    """
+
+    #: 会被 pip 执行的 requirements 文件
+    EXECUTED = ("requirements.txt", "requirements-dev.txt")
+
+    @staticmethod
+    def _spec_lines(name: str):
+        """只返回会被 pip 真正解析的行（跳过空行与注释）。"""
+        text = (BASE / name).read_text(encoding="utf-8")
+        for i, raw in enumerate(text.splitlines(), 1):
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            yield i, line
+
+    @staticmethod
+    def _is_option(line: str) -> bool:
+        """`-r file` / `-e .[a,b]` / `--index-url ...` 这类 pip 选项。"""
+        return line.startswith("-")
+
+    @pytest.mark.parametrize("name", EXECUTED)
+    def test_every_line_is_a_valid_requirement(self, name):
+        from packaging.requirements import InvalidRequirement, Requirement
+        for lineno, line in self._spec_lines(name):
+            if self._is_option(line):
+                continue
+            try:
+                Requirement(line)
+            except InvalidRequirement as exc:
+                pytest.fail(
+                    f"{name} 第 {lineno} 行不是合法的 requirement：{line!r}\n"
+                    f"  原因：{exc}\n"
+                    f"  requirements*.txt 只能写包名/URL，不能写 shell 命令。\n"
+                    f"  安装速查表请放 requirements-optional.txt 或 README。")
+
+    @pytest.mark.parametrize("name", EXECUTED)
+    def test_no_shell_commands(self, name):
+        for lineno, line in self._spec_lines(name):
+            if self._is_option(line):
+                continue
+            # 单个 requirement 里允许出现空格吗？不允许 —— 合法 specifier
+            # 形如 `pkg>=1.0` / `pkg[extra]>=1.0`，都不含空格。
+            assert " " not in line, (
+                f"{name} 第 {lineno} 行含空格，像 shell 命令：{line!r}\n"
+                f"  requirements*.txt 只接受单行 requirement。")
+            assert not line.startswith("pip "), (
+                f"{name} 第 {lineno} 行是 shell 命令：{line!r}")
+
+    def test_cheatsheet_is_separate(self):
+        """安装速查表必须放在不会被执行的文件里。"""
+        assert (BASE / "requirements-optional.txt").is_file()
+        text = (BASE / "requirements-optional.txt").read_text(encoding="utf-8")
+        assert "pip install" in text, "速查表应含 pip install 示例"
+
+    def test_dev_requirements_install_the_package_extras(self):
+        """CI 靠这个文件装 web/mcp/ai，否则接入层测试会被 skip 或收集失败。"""
+        spec = [line for _, line in self._spec_lines("requirements-dev.txt")]
+        assert any("-e .[" in line for line in spec), (
+            "requirements-dev.txt 必须装本项目本体（带 extras），"
+            "否则 tests/test_web.py 等会被跳过")
+        joined = "\n".join(spec).lower()
+        for tool in ("pytest", "pytest-cov", "ruff"):
+            assert tool in joined, f"缺少开发工具：{tool}"
+
+    def test_legacy_gui_deps_not_in_ci_path(self):
+        """tkinterdnd2 只发 sdist 且需 Tk 头文件，不能进 CI 安装路径。"""
+        for name in self.EXECUTED:
+            spec = [line.lower() for _, line in self._spec_lines(name)]
+            joined = "\n".join(spec)
+            assert "tkinterdnd2" not in joined, (
+                f"{name} 不应包含 tkinterdnd2（仅 sdist，CI 上易安装失败）")
+            assert "customtkinter" not in joined, (
+                f"{name} 不应包含 customtkinter（属于已归档的 legacy extra）")
+
+
+# ---------------------------------------------------------------------------
 # 缺可选依赖时的行为
 # ---------------------------------------------------------------------------
 class TestGracefulDegradation:

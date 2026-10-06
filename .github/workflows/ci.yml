@@ -5,16 +5,23 @@ on:
     branches: [ main, master ]
   pull_request:
 
+# 同一分支的新 push 取消仍在跑的旧 run，避免队列堆积
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     strategy:
-      fail-fast: false
+      fail-fast: false          # 矩阵里任一格失败不影响其它格的结果可见性
       matrix:
         include:
           - { os: ubuntu-latest, python: "3.9" }
           - { os: ubuntu-latest, python: "3.12" }
           - { os: windows-latest, python: "3.12" }
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20         # 核心层测试只要十几秒，卡住说明出了问题
+
     steps:
       - uses: actions/checkout@v4
 
@@ -23,14 +30,25 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           cache: pip
+          cache-dependency-path: requirements-dev.txt
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          # 关键：requirements-dev.txt 必须是合法的 pip requirements 文件。
+          # 它内部是 `-r requirements.txt` + `-e .[web,mcp,ai]` + 测试工具，
+          # 装的是本项目本体加运行时可选能力 —— 否则 test_web / test_mcp /
+          # test_ai 会被 importorskip 跳过或因缺 httpx 在收集阶段就报错。
+          #
+          # 旧版 Tkinter 界面（gui_legacy）**故意不在这里**：
+          # tkinterdnd2 只发 sdist，构建需系统 Tk 开发头文件，在 runner 上
+          # 极易安装失败（这是本流水线 2026-09 长期全红的成因之一）；
+          # 且它的测试需要真实显示环境，无头 CI 里无验证价值。
+          # 需要验证旧界面时用本地：pip install "log-ai-compressor[legacy]"
           pip install -r requirements-dev.txt
 
       - name: Lint (ruff)
-        run: ruff check log_ai_compressor tests
+        run: ruff check log_ai_compressor tests scripts
 
       - name: Unit & integration tests with coverage
         run: >

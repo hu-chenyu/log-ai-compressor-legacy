@@ -1,0 +1,36 @@
+# 可选能力安装速查（**这是给人看的，不是给 pip 用的**）
+#
+# 本文件不会被任何流程执行。真正的 requirements 见：
+#   requirements.txt      核心引擎运行时依赖
+#   requirements-dev.txt  开发与 CI 依赖
+#
+# 把安装命令写进 requirements*.txt 是本项目踩过的坑：
+# `pip install -r requirements.txt` 会把 `pip`、`install`、`xxx[web]`
+# 当成包名，报 Invalid requirement 并让整条 CI 失败。
+# tests/test_packaging.py::TestRequirementsFiles 专门守这条。
+
+# 核心引擎（只有 PyYAML 一个硬依赖）
+pip install log-ai-compressor
+
+# 本地 Web 界面（双击 start.bat 走这条）
+pip install "log-ai-compressor[web]"
+
+# MCP Server：让 Claude Code / Codex / mavis 等 Agent 调用本机日志
+pip install "log-ai-compressor[mcp]"
+
+# AI 解读（OpenAI 兼容端点 / 本地 Ollama 都走它）
+pip install "log-ai-compressor[ai]"
+
+# 全都要
+pip install "log-ai-compressor[all]"
+
+# 旧版 Tkinter 桌面界面（gui_legacy，已归档，回退用）
+# 注意：tkinterdnd2 只发 sdist，构建需要 Tk 开发头文件，可能装不上
+pip install "log-ai-compressor[legacy]"
+
+# 源码开发
+pip install -e ".[all,dev]"
+
+# ---- 说明 ----
+# AI 解读是**可选**功能，不装 httpx 也能用：
+#   聚类 / 根因判定 / 异常检测 / 报告导出全是本地算法，零出网、零成本。

@@ -1,26 +1,10 @@
-# 核心引擎：只有 PyYAML 一个硬依赖
-#   core / rules / export 三层零三方依赖，任何环境都能跑
-pip install log-ai-compressor
-
-# ---- 以下都是可选能力，按需装 ----
-
-# 本地 Web 界面（双击 start.bat 走这条）
-pip install "log-ai-compressor[web]"
-
-# MCP Server：让 Claude Code / Codex / mavis 等 Agent 调用本机日志
-pip install "log-ai-compressor[mcp]"
-
-# AI 解读（OpenAI 兼容端点 / 本地 Ollama 都走它）
-pip install "log-ai-compressor[ai]"
-
-# 全都要
-pip install "log-ai-compressor[all]"
-
-# ---- 源码开发 ----
-pip install -e ".[all,dev]"
-
-# ---- 说明 ----
-# AI 解读是**可选**功能，不装 httpx 也能用：
-#   聚类 / 根因判定 / 异常检测 / 报告导出全是本地算法，零出网、零成本。
-# 旧版 Tkinter 桌面界面（gui_legacy）已归档，需要回退时再装：
-#   pip install "log-ai-compressor[legacy]"
+# 核心引擎运行时依赖
+#
+# 这是一个**合法的 pip requirements 文件**：每行只能是包名或 URL，不能是 shell 命令。
+# 历史上这里曾被写成 `pip install log-ai-compressor` 这样的命令速查表，
+# 导致 `pip install -r requirements.txt`（CI 的第一步）直接报
+#   Invalid requirement: 'pip install log-ai-compressor'
+# 整条流水线全红。安装速查表见 README 与 requirements-optional.txt。
+#
+# 权威声明在 pyproject.toml 的 [project].dependencies，本文件与之保持一致。
+PyYAML>=6.0
