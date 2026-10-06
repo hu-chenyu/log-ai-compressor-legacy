@@ -24,10 +24,6 @@ pip install "log-ai-compressor[ai]"
 # 全都要
 pip install "log-ai-compressor[all]"
 
-# 旧版 Tkinter 桌面界面（gui_legacy，已归档，回退用）
-# 注意：tkinterdnd2 只发 sdist，构建需要 Tk 开发头文件，可能装不上
-pip install "log-ai-compressor[legacy]"
-
 # 源码开发
 pip install -e ".[all,dev]"
 

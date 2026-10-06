@@ -11,10 +11,3 @@ pytest>=7.0
 pytest-cov>=4.0
 pytest-timeout>=2.1
 ruff>=0.4
-
-# 旧版 Tkinter 桌面界面（gui_legacy）**故意不进 CI**：
-# 1) 它已归档，不是主入口；
-# 2) tkinterdnd2 只发 sdist，构建需要在系统里装 Tk 开发头文件，
-#    在 GitHub runner 上极易安装失败（这是旧流水线长期全红的一个成因）；
-# 3) 它的测试需要真实显示环境，无头 CI 里会整体 skip，没有验证价值。
-# 需要回退旧界面时本地装：pip install "log-ai-compressor[legacy]"

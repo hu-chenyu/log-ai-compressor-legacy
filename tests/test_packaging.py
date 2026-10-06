@@ -67,7 +67,7 @@ class TestPackaging:
 
     def test_optional_extras_present(self, pyproject):
         extras = pyproject["project"]["optional-dependencies"]
-        for name in ("web", "mcp", "ai", "all", "legacy", "dev"):
+        for name in ("web", "mcp", "ai", "all", "dev"):
             assert name in extras, f"缺少 extra: {name}"
 
     def test_extras_have_no_local_paths(self, pyproject):
@@ -184,16 +184,6 @@ class TestRequirementsFiles:
         joined = "\n".join(spec).lower()
         for tool in ("pytest", "pytest-cov", "ruff"):
             assert tool in joined, f"缺少开发工具：{tool}"
-
-    def test_legacy_gui_deps_not_in_ci_path(self):
-        """tkinterdnd2 只发 sdist 且需 Tk 头文件，不能进 CI 安装路径。"""
-        for name in self.EXECUTED:
-            spec = [line.lower() for _, line in self._spec_lines(name)]
-            joined = "\n".join(spec)
-            assert "tkinterdnd2" not in joined, (
-                f"{name} 不应包含 tkinterdnd2（仅 sdist，CI 上易安装失败）")
-            assert "customtkinter" not in joined, (
-                f"{name} 不应包含 customtkinter（属于已归档的 legacy extra）")
 
 
 # ---------------------------------------------------------------------------

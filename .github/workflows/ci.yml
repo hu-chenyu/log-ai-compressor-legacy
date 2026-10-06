@@ -39,12 +39,6 @@ jobs:
           # 它内部是 `-r requirements.txt` + `-e .[web,mcp,ai]` + 测试工具，
           # 装的是本项目本体加运行时可选能力 —— 否则 test_web / test_mcp /
           # test_ai 会被 importorskip 跳过或因缺 httpx 在收集阶段就报错。
-          #
-          # 旧版 Tkinter 界面（gui_legacy）**故意不在这里**：
-          # tkinterdnd2 只发 sdist，构建需系统 Tk 开发头文件，在 runner 上
-          # 极易安装失败（这是本流水线 2026-09 长期全红的成因之一）；
-          # 且它的测试需要真实显示环境，无头 CI 里无验证价值。
-          # 需要验证旧界面时用本地：pip install "log-ai-compressor[legacy]"
           pip install -r requirements-dev.txt
 
       - name: Lint (ruff)
@@ -72,7 +66,6 @@ jobs:
           except ImportError:
               pathlib.Path(".coveragerc.ci").write_text(
                   "[run]\nomit =\n"
-                  "    log_ai_compressor/gui_legacy/*\n"
                   "    log_ai_compressor/cli.py\n"
                   "    log_ai_compressor/mcp/*\n",
                   encoding="utf-8")

@@ -195,13 +195,12 @@ log-ai-compressor rules list
 
 | 子命令 | 用途 |
 | --- | --- |
-| `web` | 启动本地 Web 界面（v2 主入口） |
+| `web` | 启动本地 Web 界面（主入口） |
 | `mcp` | 启动 MCP Server / 打印客户端配置 |
 | `ai` | AI 解读的 status / config / test / explain |
 | `run` | 分析单个日志文件 |
 | `compare` | 多文件对比 |
 | `rules` | 查看解析规则模板 |
-| `gui` | 旧版 Tkinter 桌面界面（已归档，见第 7 节） |
 
 ---
 
@@ -248,7 +247,6 @@ log_ai_compressor/
 │   ├── config.py            #   服务商配置（三层优先级 + Key 不回显）
 │   ├── client.py            #   OpenAI 兼容 / Ollama 原生协议
 │   └── prompts.py           #   提示词（显式约束防幻觉）
-├── gui_legacy/              # 旧版 Tkinter 界面（已归档，见第 7 节）
 └── cli.py                   # 命令行入口
 ```
 
@@ -274,20 +272,7 @@ log_ai_compressor/
 
 ---
 
-## 7. 旧版桌面界面（已归档）
-
-v1 的 Tkinter 界面（6604 行单文件）已移动到 `log_ai_compressor/gui_legacy/`，**代码保留未删**，作为 Web 版效果不如预期时的回退方案。
-
-```bash
-pip install -e ".[legacy]"   # 装 customtkinter / matplotlib / tkinterdnd2
-log-ai-compressor gui        # 或双击 run_gui.bat
-```
-
-它仍然能跑（四态主题、全屏查看、簇展开、拖拽导入都在），但不建议日常使用 —— 单文件巨石难维护，且有几个测试在 167% 缩放下会因写死像素值而失败。
-
----
-
-## 8. 开发与测试
+## 7. 开发与测试
 
 ```bash
 pip install -r requirements-dev.txt
@@ -306,17 +291,16 @@ python -m pytest --cov=log_ai_compressor --cov-report=term-missing
 | `test_mcp.py` | 工具注册、只读标注、各工具行为与错误路径 | < 1s |
 | `test_ai.py` | 配置优先级、提示词、客户端（mock 网络）、可选性 | < 1s |
 | `test_*.py`（core） | 解析 / 聚类 / 分析 / 导出 / 编码 / 对比 | ~2s |
-| `test_gui_legacy_app.py` | 旧版 Tkinter（需显示环境） | ~11min |
 
 CI（GitHub Actions）：矩阵（Ubuntu/Windows × Python 3.9/3.12）自动执行规范检查、测试与覆盖率统计。
 
 ### 启动脚本的硬约束
 
-`start.bat` / `run_gui.bat` **必须是纯 ASCII + CRLF 行尾**，测试会强制校验。原因见 `tests/test_launcher.py` 顶部注释：cmd.exe 逐字节按控制台代码页解析批处理文件，用裸 LF 或含非 ASCII 字节都会导致解析错位、每行开头被吞，GUI 永远起不来。所有中文提示都放在 Web 界面里，不放 bat。
+`start.bat` **必须是纯 ASCII + CRLF 行尾**，测试会强制校验。原因见 `tests/test_launcher.py` 顶部注释：cmd.exe 逐字节按控制台代码页解析批处理文件，用裸 LF 或含非 ASCII 字节都会导致解析错位、每行开头被吞，程序永远起不来。所有中文提示都放在 Web 界面里，不放 bat。
 
 ---
 
-## 9. 自定义解析规则
+## 8. 自定义解析规则
 
 新建 `my_format.yaml`：
 
@@ -339,6 +323,6 @@ level_hints:            # 无级别字段的行按关键词推断（可选）
 
 ---
 
-## 10. License
+## 9. License
 
 MIT

@@ -114,11 +114,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_rules.add_argument("name", nargs="?", default=None, help="模板名")
     p_rules.set_defaults(func=cmd_rules)
 
-    # gui 子命令（旧版 Tkinter 界面，已归档保留作回退）
-    p_gui = sub.add_parser("gui", help="启动旧版桌面界面（已归档，推荐用 web）")
-    p_gui.set_defaults(func=cmd_gui)
-
-    # web 子命令（v2 主界面）
+    # web 子命令（主界面）
     p_web = sub.add_parser("web", help="启动本地 Web 界面（默认，双击启动器用的就是它）")
     p_web.add_argument("--host", default="127.0.0.1",
                        help="绑定地址（默认仅本机；改 0.0.0.0 会把日志分析能力暴露到局域网，不建议）")
@@ -310,20 +306,6 @@ def cmd_rules(args) -> int:
             print(f"  - {rule.name}: {rule.pattern_text[:90]}")
         print(f"堆栈特征（{len(rs.stack_indicators)} 条）、"
               f"级别提示（{len(rs.level_hints)} 级）")
-    return EXIT_OK
-
-
-def cmd_gui(args) -> int:
-    """旧版 Tkinter 界面（已归档，保留作回退）。"""
-    try:
-        from log_ai_compressor.gui_legacy.app import main as gui_main
-    except ImportError as exc:
-        print(f"错误：旧版桌面界面不可用（{exc}）。"
-              f"请改用：log-ai-compressor web", file=sys.stderr)
-        return EXIT_ERROR
-    print("提示：旧版桌面界面已归档，新功能请用 log-ai-compressor web\n",
-          file=sys.stderr)
-    gui_main()
     return EXIT_OK
 
 

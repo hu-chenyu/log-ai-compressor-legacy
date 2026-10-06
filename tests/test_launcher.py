@@ -1,17 +1,15 @@
 # -*- coding: utf-8 -*-
 """双击启动脚本测试：编码、行尾、关键逻辑。
 
-两个脚本：
-- ``start.bat``   —— v2 主入口，起本地 Web 服务并自动开浏览器
-- ``run_gui.bat`` —— 旧版 Tkinter 桌面界面（已归档，回退用）
+唯一入口是 ``start.bat`` —— 起本地 Web 服务并自动开浏览器。
 
 **为什么强制纯 ASCII + CRLF**（这条被测试反复咬住，别改回去）
 ----------------------------------------------------------
 cmd.exe 逐字节按控制台代码页解析批处理文件。踩中任一条都会静默失败：
-1. 用了裸 LF 行尾 → cmd 解析错位，每行开头被吞（``%PY% run_gui.py`` 变
-   ``ui.py``，报一堆 ``'xxx' is not recognized``，GUI 永远起不来）；
+1. 用了裸 LF 行尾 → cmd 解析错位，每行开头被吞（``%PY% start.py`` 变
+   ``art.py``，报一堆 ``'xxx' is not recognized``，程序永远起不来）；
 2. 含与控制台代码页不匹配的非 ASCII 字节 → 同样错位，且中文提示变乱码。
-把中文放进 GUI/script 层，bat 里只留 ASCII，才能在任何系统代码页下工作。
+把中文放进 Web 界面层，bat 里只留 ASCII，才能在任何系统代码页下工作。
 """
 from __future__ import annotations
 
@@ -19,7 +17,6 @@ from pathlib import Path
 
 import pytest
 
-BAT_PATH = Path(__file__).resolve().parent.parent / "run_gui.bat"
 START_BAT = Path(__file__).resolve().parent.parent / "start.bat"
 
 
@@ -39,12 +36,6 @@ def _read_bat(path: Path) -> str:
         f"{path.name} 含 {len(non_ascii)} 个非 ASCII 字节（首个在偏移 "
         f"{non_ascii[0]}）—— cmd 会与控制台代码页错位解析")
     return raw.decode("ascii")     # 纯 ASCII 必然也能被 gbk 解码
-
-
-@pytest.fixture(scope="module")
-def bat_content() -> str:
-    """旧版桌面启动器内容。"""
-    return _read_bat(BAT_PATH)
 
 
 @pytest.fixture(scope="module")
@@ -82,42 +73,7 @@ class TestStartBat:
 
 
 # ---------------------------------------------------------------------------
-# 旧版 run_gui.bat
-# ---------------------------------------------------------------------------
-class TestRunGuiBat:
-    def test_file_exists(self):
-        assert BAT_PATH.is_file()
-
-    def test_echo_off_and_no_chcp_utf8(self, bat_content):
-        # @echo off 首行；不使用 chcp 65001（UTF-8 模式会破坏 cmd 逐行解析）
-        assert bat_content.splitlines()[0].strip().lower() == "@echo off"
-        assert "chcp 65001" not in bat_content
-
-    def test_cd_to_script_dir(self, bat_content):
-        # 切换到脚本目录，保证任何工作目录下双击都能找到 run_gui.py
-        assert 'cd /d "%~dp0"' in bat_content
-
-    def test_python_fallback_detection(self, bat_content):
-        # python 优先、py -3 回退（覆盖仅装 py 启动器的环境）
-        assert 'set "PY=python"' in bat_content
-        assert "py -3" in bat_content
-        # 用真实执行校验排除 Windows 商店占位 python
-        assert 'python -c "import sys"' in bat_content
-
-    def test_dependency_auto_install(self, bat_content):
-        # 依赖缺失时自动安装（tkinterdnd2 为拖拽所需）
-        assert "pip install customtkinter matplotlib PyYAML tkinterdnd2" in bat_content
-
-    def test_launches_run_gui(self, bat_content):
-        assert "%PY% run_gui.py" in bat_content
-
-    def test_failure_shows_pause(self, bat_content):
-        # 失败分支必须 pause，避免双击后窗口闪退看不到错误
-        assert bat_content.count("pause") >= 3
-
-
-# ---------------------------------------------------------------------------
-# CLI 参数默认值与 GUI / 常量一致性（修复缺陷#5 收尾）
+# CLI 参数默认值与常量一致性
 # ---------------------------------------------------------------------------
 class TestCliDefaults:
     def test_run_context_default_50(self):
@@ -132,10 +88,9 @@ class TestCliDefaults:
         cfg = FilterConfig.from_dict({"context_lines": 9999})
         assert cfg.context_lines == 9999
 
-    def test_gui_and_cli_context_same_default(self):
-        """GUI 与 CLI 的上下文默认值必须同源（DEFAULT_CONTEXT_LINES）。"""
+    def test_cli_context_matches_constant(self):
+        """CLI 的 --context 默认值必须同源 DEFAULT_CONTEXT_LINES，不能各写一份。"""
         from log_ai_compressor.cli import build_parser
         from log_ai_compressor.constants import DEFAULT_CONTEXT_LINES
-        from log_ai_compressor.gui_legacy.config_store import DEFAULT_CONFIG
         args = build_parser().parse_args(["run", "app.log"])
-        assert args.context == DEFAULT_CONTEXT_LINES == DEFAULT_CONFIG["context_lines"]
+        assert args.context == DEFAULT_CONTEXT_LINES

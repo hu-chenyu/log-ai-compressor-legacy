@@ -14,7 +14,6 @@
 - log_ai_compressor.mcp          MCP 服务器（把分析能力暴露给 AI Agent）
 - log_ai_compressor.ai           可选 AI 解读层（OpenAI 兼容端点 / 本地 Ollama，不配 key 可用）
 - log_ai_compressor.cli          命令行入口（run / compare / rules / web / mcp / ai）
-- log_ai_compressor.gui_legacy   旧版 Tkinter 桌面界面（已归档，保留作回退，见 README）
 """
 
 __version__ = "2.0.0"

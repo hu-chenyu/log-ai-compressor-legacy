@@ -55,8 +55,6 @@ ai = [
 all = [
     "log-ai-compressor[web,mcp,ai]",
 ]
-# 旧版 Tkinter 桌面界面（已归档，仅回退用）
-legacy = ["customtkinter>=5.2.0", "matplotlib>=3.5", "tkinterdnd2>=0.4.2"]
 dev = ["pytest>=7.0", "pytest-cov>=4.0", "pytest-timeout>=2.1", "ruff>=0.4"]
 
 [project.scripts]
@@ -89,7 +87,6 @@ ignore = ["E741"]
 [tool.coverage.run]
 # 覆盖率面向核心逻辑 + 接入层（service 是 Web/MCP 共用的门面，必须计入）
 omit = [
-    "log_ai_compressor/gui_legacy/*",   # 已归档的旧 Tkinter 界面
     "log_ai_compressor/cli.py",
 ]
 
