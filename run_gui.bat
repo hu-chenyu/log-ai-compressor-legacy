@@ -1,46 +1,56 @@
 @echo off
 REM ============================================================
-REM  log-ai-compressor 日志AI压缩器 - GUI 双击启动脚本
-REM  自动定位 Python、自动补装依赖，任何 Windows 环境可用
+REM  log-ai-compressor - GUI launcher for Windows (double-click)
+REM
+REM  IMPORTANT: this file is intentionally ASCII-only.
+REM  cmd.exe parses batch files byte-by-byte against the console
+REM  code page. Any non-ASCII byte (Chinese comments or messages)
+REM  desynchronizes the parser when the console code page does not
+REM  match the file encoding, and commands get silently truncated
+REM  (for example "%PY% run_gui.py" is seen as "ui.py").
+REM  All user-facing Chinese text lives in the GUI itself, which is
+REM  unaffected. This file MUST also use CRLF line endings - cmd.exe
+REM  mis-parses bare-LF batch files and drops the head of every line.
 REM ============================================================
 setlocal
-title 日志AI压缩器
+title log-ai-compressor
 
-REM 切换到脚本所在目录（保证能找到 run_gui.py 与源码包）
+REM ---- always work from the script directory so run_gui.py resolves ----
 cd /d "%~dp0"
 
-REM ---- 探测可用的 Python（优先常规 python，回退 py 启动器）----
-REM 用真实执行校验排除 Windows 商店占位程序（它会静默失败）
+REM ---- locate a usable Python: python first, then the py launcher ----
+REM the -c probe also rejects the Microsoft Store stub python
 set "PY="
 python -c "import sys" >nul 2>nul && set "PY=python"
 if not defined PY (
     py -3 -c "import sys" >nul 2>nul && set "PY=py -3"
 )
 if not defined PY (
-    echo [错误] 未检测到 Python 3.9+。
-    echo        请从 https://www.python.org/downloads/ 安装，
-    echo        安装时务必勾选 "Add Python to PATH"。
+    echo [ERROR] Python 3.9+ was not found on this machine.
+    echo         Install it from https://www.python.org/downloads/
+    echo         and tick "Add Python to PATH" during setup.
     pause
     exit /b 1
 )
 
-REM ---- 依赖自检：缺失则自动安装 ----
-%PY% -c "import customtkinter, matplotlib, yaml" >nul 2>nul
+REM ---- dependency check: install once when anything is missing ----
+%PY% -c "import customtkinter, matplotlib, yaml, tkinterdnd2" >nul 2>nul
 if errorlevel 1 (
-    echo [初始化] 首次运行，正在安装依赖（约 1~2 分钟）...
+    echo [SETUP] Installing dependencies, this takes 1-2 minutes...
     %PY% -m pip install customtkinter matplotlib PyYAML tkinterdnd2
     if errorlevel 1 (
-        echo [错误] 依赖安装失败，请手动执行：pip install -r requirements.txt
+        echo [ERROR] Dependency installation failed.
+        echo         Please run manually: pip install -r requirements.txt
         pause
         exit /b 1
     )
 )
 
-REM ---- 启动 GUI ----
+REM ---- launch the GUI ----
 %PY% run_gui.py
 if errorlevel 1 (
     echo.
-    echo [错误] GUI 启动失败，请将上方报错信息反馈给开发者。
+    echo [ERROR] The GUI failed to start. Please send the error above.
     pause
 )
 endlocal

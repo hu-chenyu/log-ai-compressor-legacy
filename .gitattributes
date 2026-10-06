@@ -1,0 +1,25 @@
+# 行尾策略：按文件类型钉死，避免各平台/各编辑器来回转换
+#
+# .bat 必须永远是 CRLF —— cmd.exe 逐字节解析批处理文件，用裸 LF 会
+# 解析错位、把每行开头吞掉（`%PY% run_gui.py` 会被读成 `ui.py`），
+# 双击启动必然失败。2026-10 本项目就因为 .bat 被存成 LF 而全线打不开，
+# 且这份坏文件已经进了仓库。下面的规则让它不可能再发生。
+*.bat text eol=crlf
+
+# 源码与文本统一 LF（跨平台开发最通用）
+*.py   text eol=lf
+*.js   text eol=lf
+*.css  text eol=lf
+*.html text eol=lf
+*.md   text eol=lf
+*.yaml text eol=lf
+*.yml  text eol=lf
+*.toml text eol=lf
+*.txt  text eol=lf
+
+# 二进制：禁止任何行尾转换
+*.log   binary
+*.png   binary
+*.jpg   binary
+*.svg   binary
+*.whl   binary
