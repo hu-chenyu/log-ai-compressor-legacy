@@ -1,6 +1,7 @@
 # log-ai-compressor · 日志AI压缩器
 
-> 全场景通用日志分析前置处理器 —— 把海量日志压缩成一份 AI 可读的排查报告
+> **本地日志分析取证台** —— 把海量日志压缩成一份 AI 可读的排查报告。
+> **所有计算在本机完成，日志不出网**，不需要账号、不需要云服务、不上传任何文件。
 
 [![CI](https://github.com/hu-chenyu/log-ai-compressor/actions/workflows/ci.yml/badge.svg)](https://github.com/hu-chenyu/log-ai-compressor/actions)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)](./pyproject.toml)
@@ -10,56 +11,28 @@
 
 ## 1. 项目定位
 
-**log-ai-compressor** 是一个独立开源的 Python GUI 工具，定位为「全场景通用日志分析前置处理器」，面向开发、测试、运维等全技术研发岗位。
-
-两大核心场景：
+**log-ai-compressor** 是一个独立开源的 Python 工具，定位是「日志压缩投喂大模型 + 快速故障排查」，面向开发、测试、运维岗位。
 
 | 场景 | 痛点 | 解法 |
 | --- | --- | --- |
-| **日志压缩投喂大模型** | 几十 MB 的日志远超 LLM 上下文窗口，直接粘贴要么截断要么爆 token | 聚类去重 + Top N + 典型样例，产出结构化 Markdown 报告，压缩比通常 50~500 倍 |
-| **快速故障排查** | 上百万行日志人工翻找错误，同类错误重复出现干扰判断 | 根因定位 + 优先级排序 + 堆栈降噪 + 时间趋势，直接指出「先查哪里」 |
+| **日志压缩投喂大模型** | 几十 MB 的日志远超 LLM 上下文窗口，直接粘贴要么截断要么爆 token | 聚类去重 + Top N + 典型样例，产出结构化报告。**实测 10 万行 / 7MB → 150 tokens（压缩 12289 倍）** |
+| **快速故障排查** | 上百万行日志人工翻找，同类错误刷屏干扰判断 | 根因定位 + 优先级排序 + 堆栈降噪 + 时间趋势，直接指出「先查哪里」 |
+| **给 AI Agent 当后端** | Agent 想查本机日志只能 `grep` | 内置 MCP Server，Claude Code / Codex / mavis 可直接调用本工具做聚类与根因分析 |
 
-## 2. 解决的痛点
+### 为什么是「本地」
 
-- 大日志文件（GB 级 / 亿级行）无法直接投喂 AI，人工 grep 排查效率低
-- 同一错误重复刷屏（重试风暴），真正不同的错误被淹没
-- 堆栈里全是框架/系统库帧，根因帧难找
-- 多版本 / 修复前后的日志差异靠肉眼 diff
-- 中文日志编码混乱（UTF-8/GBK/GB2312）打开乱码
+主流可观测平台（阿里云 SLS、Datadog、Dynatrace…）都必须把日志**上传到云上**，按 GB 或按主机计费，还要求先装 Agent 埋点。本工具反过来：
 
-## 3. 核心特性
+- **零数据出网** —— 不装 Agent，不连账号，日志文件不离开你的磁盘
+- **零成本** —— 无订阅、无 token 账单（AI 解读可选，压缩后单次成本约 0.06 分）
+- **零门槛** —— 双击 `start.bat` 即可，浏览器打开就能用
+- **涉密日志可查** —— 内网日志、生产日志不外发，也就不违反合规要求
 
-**业务核心**
-- 双输入模式：文件导入（支持超大文件、编码自动适配 UTF-8/GBK/GB2312/UTF-16，**整窗拖拽导入**）+ 文本粘贴（快速排查，兼容 BOM/CRLF/中文/emoji）
-- 通用日志解析：时间戳 / 级别 / 模块 / 内容 / 堆栈（Java、Python、C/C++、gdb 帧全兼容）
-- 模糊指纹聚类去重：行号、参数、十六进制 ID、路径差异全部抹平，同类错误只留一份典型样例 + 前后上下文（**默认 50 行，GUI 可调 5~200**）
-- 智能辅助分析：
-  - 错误因果关联（Caused-by 链 / 时间连锁 / 根因关键词）自动区分根因与连锁衍生
-  - 统计异常检测（中位数 + MAD 稳健基线，识别集中爆发 / 罕见异常）
-  - 优先级综合评分（级别 40% + 频次 30% + 根因 20% + 异常 10%），FATAL 自动置顶
-  - 堆栈降噪：折叠 `java.base` / `site-packages` / `node_modules` 等系统库与第三方帧，高亮业务栈帧
-- 多文件对比：2~3 个日志的新增 / 消失 / 共同错误与数量变化率（**+/-/= 图例说明 + 差异列表 + 两文件错误对比图表**），适配版本对比与修复验证
-- 可视化面板：错误时间趋势（含爆发点标注）、级别占比饼图、模块分布柱状图，点击图表联动错误列表
-- 一键导出：Markdown（LLM 优化格式）/ JSON / 纯文本，一键复制摘要直接投喂 AI
+代价是它不做「持续监控」：它是一个取证工具，不是 APM 平台。这是有意的取舍。
 
-**交互体验**
-- 双击启动：Windows 下双击 `run_gui.bat` 即可运行（自动定位 Python、自动补装依赖）
-- 按钮状态机：未分析全部置灰 → 分析中仅「取消」可用 → 完成后四个操作按钮全部点亮
-- 错误列表长摘要自动换行（超长路径/哈希串完整可见），支持行选中/悬停高亮；大字号排版（级别/次数 15~16 加粗，摘要 13~14），行距宽松
-- 全屏查看（左右分栏）：左侧错误簇列表，右侧详情面板同屏联动；屏幕居中 ≥80% 尺寸，ESC 返回
-- **聚类簇展开**：列表全屏中每个错误簇的「▶ ×N」可点击，展开查看全部 N 次出现的具体实例（时间戳 + 行号 + 摘要）；点击任意实例，右侧即显示该实例的原始日志、上下文与堆栈（▼ 展开 / ▶ 收起，带渐进动画）
-- 悬停说明：「典型样例」含义、三套解析规则（generic/embedded/jenkins）适用场景均有 tooltip（12 号字、420px 自动换行、贴近屏幕边缘自动换向弹出，完整可见）
-- 四态主题切换：☀️ 亮色 → 🌙 暗色 → 🔵 蓝调 → 🟢 绿调 循环（蓝色系主色调 #3B82F6，按钮实时显示当前主题），淡入淡出平滑过渡，选择自动保存并在下次启动恢复
-- **UI 性能**：错误列表超过 40 行自动启用虚拟滚动（只创建可见区行控件，滚动复用，控件数与列表长度无关）；全屏窗口预创建复用（二次打开仅刷新）；全屏行用轻量原生控件 + 分批渐进渲染（打开回调 <300ms，行切换 <100ms）
+---
 
-**架构亮点**
-- 可插拔解析规则引擎：YAML 声明规则，改配置不改代码即可接入新格式；内置 generic / embedded / jenkins 三套模板
-- GUI + CLI 双模式：GUI 日常排查，CLI（`log-ai-compressor run ...`）嵌入脚本与流水线
-- 纯流式逐行处理：内存占用只与错误种类数相关，与日志总行数无关
-- 配置持久化：常用参数自动保存恢复
-- 完整工程化配套：单元/集成/边界测试，GitHub Actions CI，覆盖率门槛 90%
-
-## 4. 快速开始
+## 2. 快速开始
 
 ### 安装
 
@@ -69,141 +42,239 @@ cd log-ai-compressor
 pip install -r requirements.txt
 ```
 
-> 可选：`pip install tkinterdnd2` 启用 GUI 文件拖拽导入（不装则自动退化为点击选择）
+### 启动（推荐：双击）
 
-### 启动 GUI
+双击项目根目录的 **`start.bat`** —— 自动定位 Python、首次运行自动装依赖、启动本地服务并打开浏览器。
 
-**方式一（推荐，Windows）**：双击项目根目录的 `run_gui.bat` —— 自动定位 Python、首次运行自动安装依赖，无需任何命令行操作。
+端口 8765 被占用时会自动顺延到 8766、8767…，不用手动改。
 
-**方式二（命令行，跨平台）**：
+### 命令行启动
 
 ```bash
-python run_gui.py            # 或
-python -m log_ai_compressor gui
+log-ai-compressor web              # 本地 Web 界面（等价于双击 start.bat）
+log-ai-compressor web --port 9000  # 指定端口
+log-ai-compressor web --no-browser # 不自动开浏览器
 ```
 
-> 拖拽导入需 `pip install tkinterdnd2`（未安装时自动退化为点击选择）；`run_gui.bat` 会自动安装。
+---
 
-### CLI 使用
+## 3. 核心特性
+
+**分析引擎（全部本地算法，零出网）**
+
+- 双输入模式：文件导入（超大文件、编码自动适配 UTF-8/GBK/GB2312/UTF-16）+ 文本粘贴
+- 通用日志解析：时间戳 / 级别 / 模块 / 内容 / 堆栈（Java、Python、C/C++、gdb 帧全兼容）
+- 模糊指纹聚类去重：行号、参数、十六进制 ID、路径差异全部抹平，同类错误只留一份典型样例 + 前后上下文
+- 三档相似度：严格 ≥0.95（簇更准）/ 标准 ≥0.85（默认）/ 宽松 ≥0.70（簇更少更狠）
+- 智能辅助分析：
+  - 错误因果关联（Caused-by 链 / 时间连锁 / 根因关键词）自动区分根因与连锁衍生
+  - 统计异常检测（中位数 + MAD 稳健基线）：集中爆发 / 周期发作 / 新型错误 / 罕见异常
+  - 优先级综合评分（级别 35% + 频次 25% + 根因 20% + 异常 10% + 持续 5% + 新生 5%），按级别分档钳制
+  - 堆栈降噪：折叠 `java.base` / `site-packages` / `node_modules` 等系统库与第三方帧，高亮业务栈帧
+- 多文件对比：2~3 个文件的新增 / 消失 / 共同错误与数量变化率，适配版本对比与修复验证
+- 可插拔解析规则引擎：YAML 声明规则，改配置不改代码即可接入新格式；内置 generic / embedded / jenkins 三套模板
+- 脱敏：内置规则（邮箱/手机号/身份证/密钥）+ 自定义正则，导出与复制时自动生效
+- 纯流式逐行处理：内存占用只与错误种类数相关，与日志总行数无关
+
+**Web 界面（v2）**
+
+- 零构建、零 CDN：纯 HTML/CSS/JS，直接改完刷新就生效，完全离线可用
+- 三 Tab：文件导入 / 文本粘贴 / 多文件对比
+- 内置文件浏览器：服务与日志同机，直接挑本机文件，无需上传（7MB 日志也不走网络）
+- 实时 SSE 进度 + 可中途取消
+- 错误簇列表（级别/次数/优先级/根因/异常标记）+ 详情面板（典型样例 / 前后上下文 / 降噪堆栈 / 变量分布 / 全部实例）
+- 三张图表：错误时间分布（爆发段标红）/ 级别构成 / 模块分布 Top 10
+- 实时过滤：支持 `and` / `or` / `not` 布尔表达式（例：`redis and not debug`）
+- 一键导出：Markdown（投喂大模型）/ JSON / JSON 全文 / 纯文本 / HTML / 精简摘要
+- 亮色 / 暗色双主题
+
+**AI 解读（可选，不配置也完全可用）**
+
+在压缩结果之上再生成一段人话解读：「一句话结论 / 根因链 / 先查哪里 / 证据不足的部分」。
+
+- 三家通吃的 provider 接入：DeepSeek / 阿里百炼 Qwen / 智谱 GLM / Kimi / OpenAI / 本地 Ollama / 任意 OpenAI 兼容端点
+- **不配 API Key 也能用**：聚类、根因判定、异常检测、导出全是本地算法，一分钱不花。AI 只是额外加一层
+- **只上传压缩后的证据摘要**，不上传原始日志全文
+- 提示词显式约束「只依据给定证据、不得编造」，避免模型编造不存在的根因
+
+```bash
+log-ai-compressor ai status                      # 看当前配置
+log-ai-compressor ai config --provider deepseek  # 选服务商
+log-ai-compressor ai config --provider deepseek --key sk-xxx
+log-ai-compressor ai test                        # 测连通性
+log-ai-compressor ai explain app.log             # 生成解读
+log-ai-compressor ai explain app.log --cluster 3 # 只解读某个错误簇
+```
+
+也可以在 Web 界面右上角「⚙ AI 设置」里点选配置。
+
+**MCP 接入（给 AI Agent 用）**
+
+2026 年可观测平台几乎都出了 MCP Server（阿里云 SLS、Datadog、Grafana…），MCP 把平台从「人去看的目的地」变成「Agent 可调用的数据源」。**但那些平台的数据都在别人的机房里；本工具的数据就在你本机。**
+
+7 个只读工具：`analyze_log_file` / `analyze_log_text` / `compare_log_files` / `export_report` / `get_cluster_detail` / `list_rules` / `check_environment`
+
+```bash
+log-ai-compressor mcp --install claude-code   # 打印配置片段
+log-ai-compressor mcp --install codex
+log-ai-compressor mcp --install mavis         # JSON 配置
+log-ai-compressor mcp                         # 直接以 stdio 启动
+```
+
+接入后可以直接对 Agent 说：
+
+> 分析一下 `C:\logs\app.log`，哪些错误是这次故障的根因？
+
+Agent 会调用本工具做聚类、根因排序，并直接引用压缩后的证据摘要 —— 不需要把几十万行日志塞进上下文。
+
+**全部工具只读**：没有删除、修改、上传、联网的接口。
+
+---
+
+## 4. CLI 使用
 
 ```bash
 # 分析日志并导出 Markdown 报告（默认级别 ERROR,FAIL）
-python -m log_ai_compressor run examples/sample_system.log --top 20 -o report.md
+log-ai-compressor run examples/sample_system.log --top 20 -o report.md
 
 # 指定级别、关键字、规则模板
-python -m log_ai_compressor run test.log --level ERROR,FAIL,WARN \
+log-ai-compressor run test.log --level ERROR,FAIL,WARN \
     --include "timeout,refused" --rule embedded --top 30 -o report.md
 
-# 调大典型样例上下文行数（默认 50，最大 200）
-python -m log_ai_compressor run test.log --context 100 -o report.md
-
-# JSON / 纯文本格式
-python -m log_ai_compressor run test.log --format json -o report.json
+# JSON 格式
+log-ai-compressor run test.log --format json -o report.json
 
 # 多文件对比（第一个为基准）
-python -m log_ai_compressor compare examples/app_v1.log examples/app_v2.log -o diff.md
+log-ai-compressor compare examples/app_v1.log examples/app_v2.log -o diff.md
 
 # 查看内置解析规则
-python -m log_ai_compressor rules list
+log-ai-compressor rules list
 ```
 
-pip 安装后可直接使用 `log-ai-compressor` 命令（等价于 `python -m log_ai_compressor`）。
-
-### 开箱演示
-
-仓库自带示例，克隆即可跑通：
-
-```bash
-python -m log_ai_compressor run examples/sample_system.log -o my_report.md
-```
-
-| 示例文件 | 说明 |
+| 子命令 | 用途 |
 | --- | --- |
-| `examples/sample_system.log` | 通用应用日志（Java/Python 堆栈、重复错误、错误爆发、FATAL） |
-| `examples/sample_embedded.log` | 嵌入式/UT 日志（`--rule embedded`） |
-| `examples/sample_gbk.log` | GBK 编码中文日志（编码自动探测演示） |
-| `examples/app_v1.log` / `app_v2.log` | 版本对比演示对 |
-| `examples/example_report.md` | 上述日志的标准输出报告 |
+| `web` | 启动本地 Web 界面（v2 主入口） |
+| `mcp` | 启动 MCP Server / 打印客户端配置 |
+| `ai` | AI 解读的 status / config / test / explain |
+| `run` | 分析单个日志文件 |
+| `compare` | 多文件对比 |
+| `rules` | 查看解析规则模板 |
+| `gui` | 旧版 Tkinter 桌面界面（已归档，见第 7 节） |
 
-### GUI 操作指南
+---
 
-- **输入**：把日志文件直接拖入窗口任意位置（首个进入「文件导入」，多文件自动填入「多文件对比」）；小段日志直接切「文本粘贴」
-- **配置**：级别勾选、包含/排除关键字、Top N、**上下文行数（5~200，默认 50，决定典型样例前后保留多少行）**；解析规则悬停 ⓘ 可查看各模板适用场景
-- **分析**：点击「开始分析」——进行中仅「取消」可用，完成后「导出报告 / 复制摘要 / 统计图表」全部点亮
-- **查看**：左侧错误列表点击任意行，右侧展示该错误的典型样例（悬停 ⓘ 有含义说明）、上下文与降噪堆栈（业务栈帧琥珀色加粗、系统库折叠行紫色提示）
-- **全屏 + 簇展开**：点「⛶ 全屏」弹出居中大窗（左右分栏：左簇列表 / 右详情）；点击左侧任意簇或实例右侧同步联动；点簇行的「▶ ×N」展开该错误全部 N 次出现（时间戳 + 摘要），再点「▼ ×N」收起；支持搜索过滤，ESC 返回
-- **对比**：「多文件对比」Tab 选 2~3 个文件分析，结果区含 `+ 新增 / - 消失 / = 共同` 图例与差异列表，「统计图表」展示两文件错误对比图
-- **主题**：右上角按钮循环切换 ☀️ 亮色 → 🌙 暗色 → 🔵 蓝调 → 🟢 绿调（平滑过渡），选择自动记住
+## 5. 性能数据
 
-## 5. 输出报告结构（为投喂大模型优化）
+| 指标 | 实测值（Python 3.11 / 普通办公机） |
+| --- | --- |
+| 处理速度 | ~25 万行/秒（10 万行 / 7.03MB 用时 **0.40 秒**） |
+| 压缩比 | 10 万行 / 7MB → 150 tokens，**12289 倍** |
+| 核心层测试 | 347 用例 / 1.9 秒 / 覆盖率 94%（仅 core+rules+export） |
+| 接入层测试 | service / web / mcp / ai 共 162 用例 / 2 秒 |
+| 全量测试 | 803 用例（不含旧版 GUI 的 509 用例 4.3 秒跑完，覆盖率 91%） |
+| 内存 | 与日志总行数无关，只与错误种类数相关 |
 
-```markdown
-# 日志AI压缩报告：app.log
-> 处理 1,200,000 行 | 耗时 12.4s | 9.7 万行/秒 | 规则 generic
-**初步定位根因**：connection refused to db-primary:5432
-## 一、概览统计          —— 全局认知（行数/错误数/种类/时间范围/级别分布）
-## 二、Top 20 错误清单    —— 表格化去重全集（优先级/次数/模块/根因/异常）
-## 三、典型样例详情       —— 每错误一份：元信息 + 前后上下文 + 降噪堆栈
-```
+复现基准：`python scripts/benchmark.py`
 
-「一键复制摘要」产出更精简的纯文本版本，适合直接粘贴给 AI 助手。
+---
 
 ## 6. 技术架构
 
 ```
 log_ai_compressor/
-├── rules/                    # 可插拔解析规则引擎（YAML 驱动）
-│   ├── engine.py             #   规则加载/编译/占位符展开/{LEVEL} 统一级别口径
-│   └── presets/              #   generic / embedded / jenkins 三套模板
-├── core/                     # 核心处理层（与 UI 完全分离）
-│   ├── models.py             #   数据模型 + 自适应时间直方图（内存 O(桶数)）
-│   ├── encoding.py           #   编码探测（BOM/严格解码验证/截断容忍）
-│   ├── parser.py             #   增量解析器（多行聚合：折行/堆栈/Caused-by）
-│   ├── filters.py            #   级别 + 关键字准入过滤
-│   ├── clustering.py         #   模糊指纹聚类（三级匹配：精确/消息模板/编辑距离）
-│   ├── analysis.py           #   根因判定/异常检测/优先级/堆栈降噪
-│   ├── pipeline.py           #   流式管线（进度/取消/上下文捕获）
-│   └── comparator.py         #   多文件对比
-├── export/reporters.py       # 导出层（Markdown/JSON/文本/摘要/对比报告）
-├── gui/                      # GUI 层（CustomTkinter）
-│   ├── app.py                #   主窗口：三 Tab + 线程化任务调度
-│   ├── charts.py             #   Matplotlib 三联图表 + 点击联动
-│   └── config_store.py       #   配置持久化
-└── cli.py                    # CLI 入口（run/compare/rules/gui）
+├── service.py               # 共享服务层：参数校验 + JSON 序列化 + 导出门面
+├── rules/                   # 可插拔解析规则引擎（YAML 驱动）
+│   ├── engine.py            #   规则加载/编译/占位符展开
+│   └── presets/             #   generic / embedded / jenkins 三套模板
+├── core/                    # 核心处理层（零 UI / 零 Web 依赖）
+│   ├── models.py            #   数据模型 + 自适应时间直方图
+│   ├── encoding.py          #   编码探测（BOM/严格解码验证/截断容忍）
+│   ├── parser.py            #   增量解析器（多行聚合：折行/堆栈/Caused-by）
+│   ├── filters.py           #   级别 + 关键词准入过滤
+│   ├── clustering.py        #   模糊指纹聚类（三级匹配）
+│   ├── analysis.py          #   根因判定/异常检测/优先级/堆栈降噪
+│   ├── pipeline.py          #   流式管线（进度/取消/上下文捕获）
+│   ├── comparator.py        #   多文件对比
+│   └── redact.py            #   脱敏
+├── export/reporters.py      # 导出层（Markdown/JSON/文本/HTML/摘要）
+├── web/                     # v2 Web 接入层
+│   ├── server.py            #   FastAPI：REST + SSE + 文件浏览
+│   ├── jobs.py              #   后台任务 + 进度队列 + SSE 帧
+│   └── static/              #   零构建前端（index.html / app.js / style.css）
+├── mcp/server.py            # MCP 接入层（7 个只读工具）
+├── ai/                      # 可选 AI 解读层
+│   ├── config.py            #   服务商配置（三层优先级 + Key 不回显）
+│   ├── client.py            #   OpenAI 兼容 / Ollama 原生协议
+│   └── prompts.py           #   提示词（显式约束防幻觉）
+├── gui_legacy/              # 旧版 Tkinter 界面（已归档，见第 7 节）
+└── cli.py                   # 命令行入口
 ```
 
-**分层解耦**：`rules → core → export → gui/cli` 单向依赖。核心层零 UI 依赖，可独立测试、被脚本复用（`from log_ai_compressor.core.pipeline import analyze_file`）。
+**分层解耦**：`rules → core → export → service → web / mcp / cli` 单向依赖。
+
+- `core` 零 UI 依赖，可独立测试、被脚本直接复用：
+  `from log_ai_compressor.core.pipeline import analyze_file`
+- `service` 是 core 与接入层之间**唯一**的转换点，Web 和 MCP 共用同一份序列化逻辑，不会各写一份、各写错一份
+- 前端零构建：不引入 node/webpack，改完刷新即生效，也不需要 npm
 
 ### 核心算法
 
 1. **模糊指纹聚类（两级性能保护）**
    - 指纹 = 级别 + 掩码消息（数字→N、十六进制→H、UUID→U、路径→P、引号串→S）+ 堆栈前 3 行特征
-   - 匹配路径：完整指纹精确命中（O(1)，覆盖绝大多数）→ (级别, 消息模板) 精确命中（堆栈差异合并）→ 同级别桶内编辑距离相似度（上限 256 次比较）
+   - 匹配路径：完整指纹精确命中（O(1)）→ (级别, 消息模板) 精确命中 → 同级别桶内编辑距离相似度（上限 256 次比较）
    - 变体命中后回写精确表，后续重复变体继续 O(1)
 
 2. **内存控制**
    - 逐行流式读取，簇内只存「模板 + 计数 + 一份样例 + 有界直方图」
    - 时间直方图桶数上限固定（簇 96 / 全局 512），超限自动 8 倍扩宽桶宽合并旧桶
 
-3. **根因判定（三路证据融合）**：Caused-by 链回溯 + 60 秒窗口内首发且含根因关键词 + 强关键词命中（≥3）；含 retry/after/downstream 等被动词的簇标记为连锁衍生
+3. **根因判定（三路证据融合）**：Caused-by 链回溯 + 60 秒窗口内首发且含根因关键词 + 强关键词命中；含 retry/after/downstream 等被动词的簇标记为连锁衍生
 
-## 7. 性能数据
+---
 
-| 指标 | 实测值（Python 3.9 / 普通办公机 / 单核） | 目标 |
+## 7. 旧版桌面界面（已归档）
+
+v1 的 Tkinter 界面（6604 行单文件）已移动到 `log_ai_compressor/gui_legacy/`，**代码保留未删**，作为 Web 版效果不如预期时的回退方案。
+
+```bash
+pip install -e ".[legacy]"   # 装 customtkinter / matplotlib / tkinterdnd2
+log-ai-compressor gui        # 或双击 run_gui.bat
+```
+
+它仍然能跑（四态主题、全屏查看、簇展开、拖拽导入都在），但不建议日常使用 —— 单文件巨石难维护，且有几个测试在 167% 缩放下会因写死像素值而失败。
+
+---
+
+## 8. 开发与测试
+
+```bash
+pip install -r requirements-dev.txt
+
+ruff check log_ai_compressor tests scripts     # 代码规范
+python -m pytest                                # 全量测试
+python -m pytest --cov=log_ai_compressor --cov-report=term-missing
+```
+
+测试分层：
+
+| 文件 | 覆盖 | 速度 |
 | --- | --- | --- |
-| 处理速度 | ISO 时间戳格式 ~18 万行/秒；无结构兜底路径 ~10 万行/秒 | ≥ 3 万行/秒 ✅ |
-| 13 万行日志端到端 | ~1 秒（GUI 含渲染） | 秒级 ✅ |
-| 100 行小日志 | < 0.2 秒（GUI 含渲染） | 1 秒内 ✅ |
-| 峰值内存 | 3.7 MB（100 万行 / 57MB 日志） | ≤ 120MB ✅ |
-| 内存随行数增长 | 无关（仅与错误种类数相关） | ✅ |
-| 智能分析开销 | 0.1%（仅错误簇参与，与总行数解耦） | ≤ 15% ✅ |
-| GUI 启动 | matplotlib 懒加载（首次点图表才导入），启动不加载重依赖 | ✅ |
+| `test_service.py` | 参数归一化、序列化、导出门面 | < 1s |
+| `test_web.py` | REST 契约、SSE 帧格式、参数拦截、文件浏览边界 | < 2s |
+| `test_mcp.py` | 工具注册、只读标注、各工具行为与错误路径 | < 1s |
+| `test_ai.py` | 配置优先级、提示词、客户端（mock 网络）、可选性 | < 1s |
+| `test_*.py`（core） | 解析 / 聚类 / 分析 / 导出 / 编码 / 对比 | ~2s |
+| `test_gui_legacy_app.py` | 旧版 Tkinter（需显示环境） | ~11min |
 
-性能优化要点（v1.1）：时间戳复合正则快速解析（替代热路径 strptime，单次约快 5 倍）、堆栈特征/级别关键词合并为单条交替正则（兜底路径 8 次→1 次扫描）、matplotlib 懒加载、行级字体共享（防跨线程 GC 死锁）。
+CI（GitHub Actions）：矩阵（Ubuntu/Windows × Python 3.9/3.12）自动执行规范检查、测试与覆盖率统计。
 
-复现基准：`python scripts/benchmark.py`（生成 100 万行合成日志并计时测内存）。
+### 启动脚本的硬约束
 
-## 8. 自定义解析规则
+`start.bat` / `run_gui.bat` **必须是纯 ASCII + CRLF 行尾**，测试会强制校验。原因见 `tests/test_launcher.py` 顶部注释：cmd.exe 逐字节按控制台代码页解析批处理文件，用裸 LF 或含非 ASCII 字节都会导致解析错位、每行开头被吞，GUI 永远起不来。所有中文提示都放在 Web 界面里，不放 bat。
+
+---
+
+## 9. 自定义解析规则
 
 新建 `my_format.yaml`：
 
@@ -224,17 +295,7 @@ level_hints:            # 无级别字段的行按关键词推断（可选）
 
 使用：`log-ai-compressor run app.log --rule my_format.yaml`
 
-## 9. 开发与测试
-
-```bash
-pip install -r requirements-dev.txt
-
-ruff check log_ai_compressor tests       # 代码规范检查
-python -m pytest                          # 全量测试（324 用例）
-python -m pytest --cov=log_ai_compressor --cov-fail-under=90   # 覆盖率门槛
-```
-
-CI（GitHub Actions）：矩阵（Ubuntu/Windows × Python 3.9/3.12）自动执行规范检查、测试与覆盖率统计。
+---
 
 ## 10. License
 
