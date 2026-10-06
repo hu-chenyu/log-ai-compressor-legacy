@@ -5,7 +5,7 @@
 用法：
     python run_gui.py
 """
-from log_ai_compressor.gui.app import main
+from log_ai_compressor.gui_legacy.app import main
 
 if __name__ == "__main__":
     main()

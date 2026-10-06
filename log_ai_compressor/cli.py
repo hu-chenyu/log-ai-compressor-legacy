@@ -114,9 +114,54 @@ def build_parser() -> argparse.ArgumentParser:
     p_rules.add_argument("name", nargs="?", default=None, help="模板名")
     p_rules.set_defaults(func=cmd_rules)
 
-    # gui 子命令
-    p_gui = sub.add_parser("gui", help="启动图形界面")
+    # gui 子命令（旧版 Tkinter 界面，已归档保留作回退）
+    p_gui = sub.add_parser("gui", help="启动旧版桌面界面（已归档，推荐用 web）")
     p_gui.set_defaults(func=cmd_gui)
+
+    # web 子命令（v2 主界面）
+    p_web = sub.add_parser("web", help="启动本地 Web 界面（默认，双击启动器用的就是它）")
+    p_web.add_argument("--host", default="127.0.0.1",
+                       help="绑定地址（默认仅本机；改 0.0.0.0 会把日志分析能力暴露到局域网，不建议）")
+    p_web.add_argument("--port", type=int, default=8765, help="端口（默认 8765）")
+    p_web.add_argument("--no-browser", action="store_true",
+                       help="启动后不自动打开浏览器")
+    p_web.add_argument("--log-level", default="warning",
+                       choices=["critical", "error", "warning", "info", "debug"])
+    p_web.set_defaults(func=cmd_web)
+
+    # mcp 子命令
+    p_mcp = sub.add_parser("mcp", help="启动 MCP 服务器（供 Claude Code / Codex 等调用）")
+    p_mcp.add_argument("--transport", default="stdio",
+                       choices=["stdio", "streamable-http", "sse"],
+                       help="stdio=本地 Agent；streamable-http=远程（仅本机）")
+    p_mcp.add_argument("--port", type=int, default=8766, help="http 传输端口")
+    p_mcp.add_argument("--install", metavar="CLIENT", nargs="?", const="claude-code",
+                       help="打印指定客户端的 MCP 配置片段后退出")
+    p_mcp.set_defaults(func=cmd_mcp)
+
+    # ai 子命令
+    p_ai = sub.add_parser("ai", help="AI 解读（可选功能，不配置也能用其他全部能力）")
+    ai_sub = p_ai.add_subparsers(dest="ai_action", required=True)
+    p_ai_status = ai_sub.add_parser("status", help="查看 AI 配置状态")
+    p_ai_status.set_defaults(func=cmd_ai_status)
+    p_ai_set = ai_sub.add_parser("config", help="配置 AI 服务商")
+    p_ai_set.add_argument("--provider", required=True,
+                          help="none/deepseek/qwen/glm/kimi/openai/ollama/custom")
+    p_ai_set.add_argument("--base-url", default="", help="Base URL（默认取服务商预设）")
+    p_ai_set.add_argument("--model", default="", help="模型名（默认取服务商预设）")
+    p_ai_set.add_argument("--key", default="", help="API Key（可留空，改用环境变量）")
+    p_ai_set.set_defaults(func=cmd_ai_config)
+    p_ai_test = ai_sub.add_parser("test", help="发一个最小请求验证连通性")
+    p_ai_test.set_defaults(func=cmd_ai_test)
+    p_ai_explain = ai_sub.add_parser("explain", help="对日志文件生成 AI 解读")
+    p_ai_explain.add_argument("file", help="日志文件路径")
+    p_ai_explain.add_argument("--cluster", type=int, default=None,
+                              help="只解读指定簇号（默认整份结果）")
+    p_ai_explain.add_argument("-q", "--question", default="",
+                              help="额外追问（可选）")
+    # --top / --level / --context / --rule 等由 _add_filter_options 统一提供
+    _add_filter_options(p_ai_explain)
+    p_ai_explain.set_defaults(func=cmd_ai_explain)
     return parser
 
 
@@ -269,8 +314,218 @@ def cmd_rules(args) -> int:
 
 
 def cmd_gui(args) -> int:
-    from log_ai_compressor.gui.app import main as gui_main
+    """旧版 Tkinter 界面（已归档，保留作回退）。"""
+    try:
+        from log_ai_compressor.gui_legacy.app import main as gui_main
+    except ImportError as exc:
+        print(f"错误：旧版桌面界面不可用（{exc}）。"
+              f"请改用：log-ai-compressor web", file=sys.stderr)
+        return EXIT_ERROR
+    print("提示：旧版桌面界面已归档，新功能请用 log-ai-compressor web\n",
+          file=sys.stderr)
     gui_main()
+    return EXIT_OK
+
+
+def cmd_web(args) -> int:
+    """启动本地 Web 界面。"""
+    try:
+        from log_ai_compressor.web.server import serve
+    except ImportError as exc:
+        print(f"错误：Web 组件不可用（{exc}）。"
+              f"请执行：pip install fastapi \"uvicorn[standard]\"", file=sys.stderr)
+        return EXIT_ERROR
+    if args.host not in ("127.0.0.1", "localhost"):
+        print(f"警告：绑定 {args.host} 会让局域网内其他设备访问本机日志分析能力，"
+              f"服务没有鉴权。确认这是你要的吗？", file=sys.stderr)
+    try:
+        serve(host=args.host, port=args.port,
+              open_browser=not args.no_browser, log_level=args.log_level)
+    except OSError as exc:
+        print(f"错误：端口 {args.port} 启动失败（{exc}）。"
+              f"换一个：--port 8766", file=sys.stderr)
+        return EXIT_ERROR
+    except KeyboardInterrupt:
+        print("\n已停止")
+    return EXIT_OK
+
+
+# 各 AI 客户端的 MCP 配置片段（--install 打印用）
+_MCP_CLIENTS = {
+    "claude-code": (
+        "Claude Code / Claude Desktop",
+        'claude mcp add --scope user log-ai-compressor -- '
+        'python -m log_ai_compressor.mcp.server',
+    ),
+    "codex": (
+        "Codex",
+        'codex mcp add log-ai-compressor -- '
+        'python -m log_ai_compressor.mcp.server',
+    ),
+    "mavis": (
+        "MiniMax Code / 其它支持 JSON 配置的客户端",
+        '{\n'
+        '  "mcpServers": {\n'
+        '    "log-ai-compressor": {\n'
+        '      "command": "python",\n'
+        '      "args": ["-m", "log_ai_compressor.mcp.server"]\n'
+        '    }\n'
+        '  }\n'
+        '}',
+    ),
+}
+
+
+def cmd_mcp(args) -> int:
+    """启动 MCP 服务器或打印客户端配置。"""
+    if args.install:
+        title, snippet = _MCP_CLIENTS.get(
+            args.install,
+            (args.install, _MCP_CLIENTS["mavis"][1]))
+        print(f"# {title}\n{snippet}")
+        return EXIT_OK
+    try:
+        from log_ai_compressor.mcp.server import main as mcp_main
+    except ImportError as exc:
+        print(f"错误：MCP 组件不可用（{exc}）。"
+              f"请执行：pip install mcp", file=sys.stderr)
+        return EXIT_ERROR
+    if args.transport == "stdio":
+        # stdio 传输下 stdout 是协议通道，任何 print 都会污染 JSON-RPC
+        print("MCP 服务器以 stdio 模式启动（stdout 专用于协议，"
+              "诊断信息走 stderr）", file=sys.stderr)
+    else:
+        print(f"MCP 服务器以 {args.transport} 启动："
+              f"http://127.0.0.1:{args.port}", file=sys.stderr)
+    mcp_main(args.transport, args.port)
+    return EXIT_OK
+
+
+def _import_ai():
+    """导入 AI 层；缺可选依赖时给出可执行的提示而不是裸 ImportError。
+
+    httpx 被拆成了 [ai] extra（见 pyproject），裸装包的用户会遇到它。
+    """
+    try:
+        from log_ai_compressor import ai as ai_mod
+        return ai_mod
+    except ImportError as exc:
+        print(f"错误：AI 解读需要额外的 httpx 依赖（{exc}）。\n"
+              f"      安装：pip install \"log-ai-compressor[ai]\"\n"
+              f"      不装也不影响其它功能 —— 聚类 / 根因判定 / 异常检测 / "
+              f"报告导出都是本地算法。", file=sys.stderr)
+        return None
+
+
+def cmd_ai_status(args) -> int:
+    """打印 AI 配置状态。"""
+    ai = _import_ai()
+    if ai is None:
+        return EXIT_ERROR
+    st = ai.describe_config()
+    cfg = st.get("config", {})
+    print(f"AI 解读：{'已启用' if st.get('available') else '未启用'}")
+    if st.get("available"):
+        print(f"  服务商：{cfg.get('provider')}   模型：{cfg.get('model')}")
+        print(f"  地址：  {cfg.get('base_url')}")
+        print(f"  Key：   {cfg.get('masked_key') or '（无需 Key）'}")
+    else:
+        print(f"  原因：{st.get('reason')}")
+    print(f"\n配置文件：{st.get('config_file')}")
+    print("\n可用服务商：")
+    for p in st.get("providers", []):
+        need = f"（环境变量 {p['env_key']}）" if p.get("env_key") else "（无需 Key）"
+        print(f"  {p['key']:<10} {p['label']} {need}")
+        if p.get("note"):
+            print(f"             {p['note']}")
+    print("\n提示：AI 解读是可选的。不配置也能正常使用聚类 / 根因判定 / "
+          "异常检测 / 导出等全部本地能力。")
+    return EXIT_OK
+
+
+def cmd_ai_config(args) -> int:
+    """保存 AI 服务商配置。"""
+    ai = _import_ai()
+    if ai is None:
+        return EXIT_ERROR
+    try:
+        cfg = ai.load_config({
+            "provider": args.provider,
+            "base_url": args.base_url,
+            "model": args.model,
+            "api_key": args.key,
+        })
+        ai.save_config(cfg)
+    except ai.LLMError as exc:
+        print(f"错误：{exc}", file=sys.stderr)
+        return EXIT_ERROR
+    except Exception as exc:                          # noqa: BLE001
+        print(f"错误：保存失败 {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    print(f"已保存：{cfg.provider} / {cfg.model} / {cfg.base_url}")
+    if not cfg.enabled:
+        print("提示：当前配置尚未启用。"
+              + ("（该服务商需要 API Key，用 --key 或环境变量提供）"
+                 if cfg.provider != "ollama" else "（请确认 Ollama 已启动并已拉取模型）"))
+    return EXIT_OK
+
+
+def cmd_ai_test(args) -> int:
+    """发一个最小请求验证连通性。"""
+    ai = _import_ai()
+    if ai is None:
+        return EXIT_ERROR
+    cfg = ai.load_config()
+    if not cfg.enabled:
+        print("AI 未启用，先执行 log-ai-compressor ai config --provider <名字>",
+              file=sys.stderr)
+        return EXIT_ERROR
+    print(f"测试 {cfg.provider} / {cfg.model} @ {cfg.base_url} …")
+    try:
+        out = ai.chat("只回复两个字：可用", cfg=cfg)
+    except ai.LLMError as exc:
+        print(f"失败：{exc}", file=sys.stderr)
+        return EXIT_ERROR
+    print(f"成功，模型返回：{out[:80]}")
+    return EXIT_OK
+
+
+def cmd_ai_explain(args) -> int:
+    """对日志文件生成 AI 解读。"""
+    ai = _import_ai()
+    if ai is None:
+        return EXIT_ERROR
+    from log_ai_compressor.core.pipeline import analyze_file
+    path = Path(args.file)
+    if not path.is_file():
+        print(f"错误：日志文件不存在 {path}", file=sys.stderr)
+        return EXIT_ERROR
+    print("本地分析中…", file=sys.stderr)
+    try:
+        result = analyze_file(
+            path,
+            levels=_parse_levels(args.level),
+            include=_parse_keywords(args.include),
+            exclude=_parse_keywords(args.exclude),
+            context_lines=args.context,
+            rule=args.rule,
+        )
+    except Exception as exc:                          # noqa: BLE001
+        print(f"错误：本地分析失败 {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    print(f"调用 AI 解读中…（{path.name}，"
+          f"{len(result.clusters)} 个错误簇）", file=sys.stderr)
+    try:
+        if args.cluster is not None:
+            text = ai.explain_cluster(result, args.cluster, question=args.question)
+        else:
+            text = ai.explain_result(result, top_n=args.top, question=args.question)
+    except ai.LLMError as exc:
+        print(f"错误：{exc}", file=sys.stderr)
+        return EXIT_ERROR
+    print("\n" + "=" * 68)
+    print(text)
+    print("=" * 68)
     return EXIT_OK
 
 

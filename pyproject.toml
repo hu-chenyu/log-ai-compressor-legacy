@@ -4,30 +4,72 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "log-ai-compressor"
-version = "1.0.0"
-description = "全场景通用日志分析前置处理器：日志压缩投喂大模型 + 快速故障排查"
+version = "2.0.0"
+description = "本地日志分析取证台：日志压缩投喂大模型 + 根因排查 + MCP 接入（数据不出网）"
 readme = "README.md"
 requires-python = ">=3.9"
-license = { text = "MIT" }
-keywords = ["log", "analyzer", "llm", "compressor", "troubleshooting"]
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["log", "analyzer", "llm", "compressor", "troubleshooting",
+            "mcp", "root-cause", "local-first"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Environment :: Web Environment",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Logging",
+]
+# 硬依赖只有 PyYAML —— core/rules/export 三个层零三方依赖，
+# 可以在任何环境（CI 容器、嵌入式、被锁依赖的公司环境）里直接跑。
+# Web / MCP / AI 全部做成可选 extra：重依赖会直接劝退 PyPI 用户。
 dependencies = [
     "PyYAML>=6.0",
-    "matplotlib>=3.5",
-    "customtkinter>=5.2",
-    "tkinterdnd2>=0.4.2",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0", "pytest-cov>=4.0", "ruff>=0.4"]
+# 本地 Web 界面（双击 start.bat 走这条）
+web = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "sse-starlette>=1.6",
+]
+# MCP Server：让 Claude Code / Codex / mavis 等 Agent 调用本机日志
+mcp = [
+    "mcp>=1.0",
+]
+# AI 解读（OpenAI 兼容端点 / 本地 Ollama 都走它）
+ai = [
+    "httpx>=0.27",
+]
+# 常用组合
+all = [
+    "log-ai-compressor[web,mcp,ai]",
+]
+# 旧版 Tkinter 桌面界面（已归档，仅回退用）
+legacy = ["customtkinter>=5.2.0", "matplotlib>=3.5", "tkinterdnd2>=0.4.2"]
+dev = ["pytest>=7.0", "pytest-cov>=4.0", "pytest-timeout>=2.1", "ruff>=0.4"]
 
 [project.scripts]
 log-ai-compressor = "log_ai_compressor.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/hu-chenyu/log-ai-compressor"
+Repository = "https://github.com/hu-chenyu/log-ai-compressor"
 
 [tool.setuptools.packages.find]
 include = ["log_ai_compressor*"]
 
 [tool.setuptools.package-data]
 "log_ai_compressor.rules" = ["presets/*.yaml"]
+# 前端是零构建的静态资源，必须打进包里，否则 pip 安装后界面 404
+"log_ai_compressor.web" = ["static/*.html", "static/*.css", "static/*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -42,8 +84,11 @@ select = ["E4", "E7", "E9", "F", "W6"]
 ignore = ["E741"]
 
 [tool.coverage.run]
-# 覆盖率门槛面向核心逻辑（GUI 依赖显示环境，CLI 属薄封装）
-omit = ["log_ai_compressor/gui/*", "log_ai_compressor/cli.py"]
+# 覆盖率面向核心逻辑 + 接入层（service 是 Web/MCP 共用的门面，必须计入）
+omit = [
+    "log_ai_compressor/gui_legacy/*",   # 已归档的旧 Tkinter 界面
+    "log_ai_compressor/cli.py",
+]
 
 [tool.coverage.report]
 show_missing = true

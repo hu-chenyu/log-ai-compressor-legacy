@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>日志AI压缩器 · 本地日志分析取证台</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
+</head>
+<body data-theme="dark">
+
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">📊</span>
+    <div class="brand-text">
+      <strong>日志AI压缩器</strong>
+      <span class="badge-local" title="所有计算都在本机完成，日志不出网">本地运行 · 数据不出网</span>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <span id="ai-status" class="pill pill-muted" title="AI 解读状态">AI 未启用</span>
+    <button id="btn-ai-settings" class="btn btn-ghost btn-sm" title="配置 AI 服务商（可选）">⚙ AI 设置</button>
+    <button id="btn-theme" class="btn btn-ghost btn-sm" title="切换主题">🌙 暗色</button>
+  </div>
+</header>
+
+<main>
+  <!-- ============ 输入区 ============ -->
+  <section class="panel input-panel">
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-tab="file" role="tab">📁 文件导入</button>
+      <button class="tab" data-tab="text" role="tab">📝 文本粘贴</button>
+      <button class="tab" data-tab="compare" role="tab">🔀 多文件对比</button>
+    </nav>
+
+    <!-- 文件导入 -->
+    <div class="tab-pane active" data-pane="file">
+      <div class="row">
+        <input id="file-path" class="input grow" placeholder="日志文件绝对路径（可直接把文件拖到这里）">
+        <button id="btn-browse" class="btn">浏览…</button>
+        <button id="btn-clear-file" class="btn btn-ghost" title="清空">✕</button>
+      </div>
+      <p class="hint" id="file-hint">支持多选：用分号 <code>;</code> 分隔多个路径可合并分析（按修改时间从旧到新，跨轮转因果链不断）。</p>
+      <div id="drop-hint" class="drop-zone">把日志文件拖到窗口任意位置</div>
+    </div>
+
+    <!-- 文本粘贴 -->
+    <div class="tab-pane" data-pane="text">
+      <textarea id="paste-text" class="textarea" placeholder="把日志文本粘贴到这里…"></textarea>
+    </div>
+
+    <!-- 多文件对比 -->
+    <div class="tab-pane" data-pane="compare">
+      <p class="hint">第一个文件为基准，列出其余文件相对它「新增 / 消失 / 共同」的错误。</p>
+      <div id="compare-list" class="compare-list"></div>
+      <button id="btn-add-compare" class="btn btn-ghost btn-sm">+ 添加对比文件</button>
+    </div>
+
+    <!-- 配置 -->
+    <div class="config">
+      <div class="cfg-group">
+        <label class="cfg-label">级别</label>
+        <div id="level-checks" class="chips"></div>
+      </div>
+
+      <div class="cfg-group">
+        <label class="cfg-label" for="cfg-context">上下文行数</label>
+        <input id="cfg-context" class="input input-num" type="number" min="0" value="50">
+        <span class="hint-inline">典型样例前后保留</span>
+      </div>
+
+      <div class="cfg-group">
+        <label class="cfg-label" for="cfg-similarity">相似度</label>
+        <select id="cfg-similarity" class="input">
+          <option value="standard">标准（推荐）≥0.85</option>
+          <option value="strict">严格 ≥0.95（簇更准更多）</option>
+          <option value="lenient">宽松 ≥0.70（簇更少更狠）</option>
+        </select>
+      </div>
+
+      <div class="cfg-group">
+        <label class="cfg-label" for="cfg-analysis">智能分析</label>
+        <select id="cfg-analysis" class="input">
+          <option value="full">完整分析（推荐）</option>
+          <option value="deep">深度扫描（门槛更低，疑难日志用）</option>
+          <option value="fast">快速聚类（超大文件用）</option>
+        </select>
+      </div>
+
+      <div class="cfg-group">
+        <label class="cfg-label" for="cfg-rule">解析规则</label>
+        <select id="cfg-rule" class="input">
+          <option value="auto">自动识别（推荐）</option>
+          <option value="generic">通用 generic</option>
+          <option value="embedded">嵌入式 embedded</option>
+          <option value="jenkins">CI构建 jenkins</option>
+        </select>
+      </div>
+
+      <div class="cfg-group">
+        <label class="cfg-label" for="cfg-maxlines">行数上限</label>
+        <select id="cfg-maxlines" class="input">
+          <option value="all">全部（推荐）</option>
+          <option value="100k">前 10 万行</option>
+          <option value="500k">前 50 万行</option>
+          <option value="1m">前 100 万行</option>
+        </select>
+      </div>
+
+      <div class="cfg-group">
+        <label class="cfg-label" for="cfg-encoding">编码</label>
+        <select id="cfg-encoding" class="input">
+          <option value="auto">自动探测（推荐）</option>
+          <option value="utf-8">UTF-8</option>
+          <option value="gb18030">GBK / GB18030</option>
+          <option value="utf-16">UTF-16</option>
+        </select>
+      </div>
+
+      <div class="cfg-group cfg-wide">
+        <label class="cfg-label" for="cfg-include">包含关键字</label>
+        <input id="cfg-include" class="input" placeholder="逗号分隔，留空不限">
+        <label class="cfg-label" for="cfg-exclude">排除</label>
+        <input id="cfg-exclude" class="input" placeholder="逗号分隔">
+        <label class="chk-inline" title="把上面的关键字按正则解释（高级）">
+          <input type="checkbox" id="cfg-regex"> 正则
+        </label>
+      </div>
+    </div>
+
+    <!-- 操作 -->
+    <div class="actions">
+      <button id="btn-analyze" class="btn btn-primary">开始分析</button>
+      <button id="btn-cancel" class="btn btn-danger" hidden>取消</button>
+      <span class="spacer"></span>
+      <div id="progress-wrap" class="progress-wrap" hidden>
+        <div class="progress"><div id="progress-bar" class="progress-bar"></div></div>
+        <span id="progress-text" class="hint-inline">解析中…</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 结果区 ============ -->
+  <section id="result-panel" class="panel result-panel" hidden>
+
+    <!-- 概览 -->
+    <div id="overview" class="overview"></div>
+
+    <!-- 图表 -->
+    <div class="charts-row" id="charts-row" hidden>
+      <div class="chart-card">
+        <h4>错误时间分布 <span class="hint-inline" id="chart-hist-meta"></span></h4>
+        <div id="chart-hist" class="histogram"></div>
+      </div>
+      <div class="chart-card">
+        <h4>级别构成</h4>
+        <div id="chart-level" class="bar-list"></div>
+      </div>
+      <div class="chart-card">
+        <h4>模块分布 Top 10</h4>
+        <div id="chart-module" class="bar-list"></div>
+      </div>
+    </div>
+
+    <!-- 工具条 -->
+    <div class="toolbar">
+      <input id="search" class="input search" placeholder="实时过滤：支持 and / or / not（例：redis and not debug）">
+      <span id="filter-count" class="pill pill-muted"></span>
+      <span class="spacer"></span>
+      <label class="chk-inline" title="导出与复制时替换邮箱/手机号/身份证/密钥">
+        <input type="checkbox" id="cfg-redact" checked> 脱敏
+      </label>
+      <button id="btn-export" class="btn btn-sm">⬇ 导出报告</button>
+      <button id="btn-copy" class="btn btn-sm">📋 复制摘要</button>
+      <button id="btn-ai" class="btn btn-sm btn-ai" title="让 AI 基于压缩结果解读根因">✨ AI 解读</button>
+    </div>
+
+    <!-- 错误列表 + 详情 -->
+    <div id="split" class="split">
+      <div class="split-left">
+        <div id="cluster-list" class="cluster-list"></div>
+      </div>
+      <div class="split-grip" id="split-grip" title="拖动调整宽度"></div>
+      <div class="split-right">
+        <div id="detail" class="detail"><p class="empty">← 从左侧选择一个错误簇查看详情</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 对比结果 ============ -->
+  <section id="compare-panel" class="panel" hidden></section>
+</main>
+
+<!-- ============ 文件选择器 ============ -->
+<dialog id="fs-dialog" class="dialog">
+  <h3>选择日志文件</h3>
+  <div class="fs-toolbar">
+    <input id="fs-filter" class="input" placeholder="过滤当前目录文件名…">
+    <button id="fs-up" class="btn btn-sm">⬆ 上级</button>
+  </div>
+  <div id="fs-list" class="fs-list"></div>
+  <div class="dialog-actions">
+    <span id="fs-status" class="hint-inline"></span>
+    <span class="spacer"></span>
+    <button id="fs-cancel" class="btn btn-ghost">取消</button>
+    <button id="fs-ok" class="btn btn-primary">确定</button>
+  </div>
+</dialog>
+
+<!-- ============ AI 设置 ============ -->
+<dialog id="ai-dialog" class="dialog">
+  <h3>AI 解读设置（可选）</h3>
+  <p class="hint">不配置也能用 —— 聚类、根因判定、异常检测、导出全部是本地算法，不消耗任何 token。AI 只是额外加一层人话解读。</p>
+  <label class="cfg-label" for="ai-provider">服务商</label>
+  <select id="ai-provider" class="input"></select>
+  <p id="ai-note" class="hint"></p>
+  <div class="row">
+    <div class="grow">
+      <label class="cfg-label" for="ai-base">Base URL</label>
+      <input id="ai-base" class="input" placeholder="留空则用该服务商的默认地址">
+    </div>
+    <div class="grow">
+      <label class="cfg-label" for="ai-model">模型</label>
+      <input id="ai-model" class="input" placeholder="留空则用默认模型">
+    </div>
+  </div>
+  <label class="cfg-label" for="ai-key">API Key</label>
+  <div class="row">
+    <input id="ai-key" class="input grow" type="password" placeholder="可留空（本地 Ollama 不需要）">
+    <span id="ai-key-state" class="hint-inline"></span>
+  </div>
+  <p class="hint" id="ai-env-hint"></p>
+  <div class="dialog-actions">
+    <span class="spacer"></span>
+    <button id="ai-save" class="btn btn-primary">保存</button>
+  </div>
+</dialog>
+
+<!-- ============ 导出弹窗 ============ -->
+<dialog id="export-dialog" class="dialog">
+  <h3>导出报告</h3>
+  <div id="export-formats" class="chips"></div>
+  <div class="dialog-actions">
+    <span class="spacer"></span>
+    <button id="export-cancel" class="btn btn-ghost">取消</button>
+    <button id="export-go" class="btn btn-primary">下载</button>
+  </div>
+</dialog>
+
+<!-- ============ AI 解读弹窗 ============ -->
+<dialog id="ai-dialog-out" class="dialog dialog-wide">
+  <h3>✨ AI 解读</h3>
+  <div class="row">
+    <select id="ai-scope" class="input">
+      <option value="result">整份结果（推荐）</option>
+      <option value="cluster">当前选中的错误簇</option>
+    </select>
+    <input id="ai-question" class="input grow" placeholder="可选：还想问什么？（留空则按默认模板提问）">
+    <button id="ai-run" class="btn btn-ai">生成</button>
+  </div>
+  <div id="ai-output" class="ai-output"><p class="empty">点「生成」开始。AI 只看到压缩后的证据摘要，不会上传原始日志全文。</p></div>
+  <div class="dialog-actions">
+    <span id="ai-cost-hint" class="hint-inline"></span>
+    <span class="spacer"></span>
+    <button id="ai-copy" class="btn btn-sm">📋 复制</button>
+    <button id="ai-out-close" class="btn btn-ghost">关闭</button>
+  </div>
+</dialog>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>
