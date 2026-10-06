@@ -51,24 +51,43 @@ jobs:
         run: ruff check log_ai_compressor tests scripts
 
       - name: Unit & integration tests with coverage
+        # 用 python 承载这段逻辑，而不是 shell：
+        # Windows runner 的默认 shell 是 pwsh，`if !` / `2>/dev/null` 这类
+        # bash 语法会直接 ParserError（run #159 就栽在这里）。`shell: python`
+        # 在三个平台上行为一致。
+        shell: python
         run: |
-          # mcp SDK 要求 Python >= 3.10，3.9 上装不上、tests/test_mcp.py 会
-          # 整体 importorskip 跳过。此时把 mcp 包移出覆盖率口径 ——
-          # 跑不了的代码不该把门槛拖到不及格；但在装得上的矩阵上必须计入，
+          import pathlib
+          import subprocess
+          import sys
+
+          # mcp SDK 要求 Python >= 3.10。3.9 上装不上、tests/test_mcp.py 会
+          # 整体 importorskip 跳过，此时把 mcp 包移出覆盖率口径 ——
+          # 跑不了的代码不该把门槛拖到不及格；在装得上的矩阵上必须计入，
           # 否则覆盖率就成了一个没人看的数字。
           # （pytest-cov 没有 --cov-omit 参数，只能换一份 coveragerc）
-          COV_CFG=""
-          if ! python -c "import mcp" 2>/dev/null; then
-            echo "::notice::mcp 不可用（Python 版本过低），本次不计入 mcp 覆盖率"
-            python -c "open('.coveragerc.ci','w').write('[run]\nomit =\n    log_ai_compressor/gui_legacy/*\n    log_ai_compressor/cli.py\n    log_ai_compressor/mcp/*\n')"
-            COV_CFG="--cov-config=.coveragerc.ci"
-          fi
-          python -m pytest \
-            --cov=log_ai_compressor $COV_CFG \
-            --cov-report=term-missing \
-            --cov-report=xml \
-            --cov-fail-under=90
-          rm -f .coveragerc.ci
+          extra = []
+          try:
+              __import__("mcp")
+          except ImportError:
+              pathlib.Path(".coveragerc.ci").write_text(
+                  "[run]\nomit =\n"
+                  "    log_ai_compressor/gui_legacy/*\n"
+                  "    log_ai_compressor/cli.py\n"
+                  "    log_ai_compressor/mcp/*\n",
+                  encoding="utf-8")
+              extra = ["--cov-config=.coveragerc.ci"]
+              print("::notice::mcp 不可用（Python 版本过低），本次不计入 mcp 覆盖率")
+
+          code = subprocess.call([
+              sys.executable, "-m", "pytest",
+              "--cov=log_ai_compressor", *extra,
+              "--cov-report=term-missing",
+              "--cov-report=xml",
+              "--cov-fail-under=90",
+          ])
+          pathlib.Path(".coveragerc.ci").unlink(missing_ok=True)
+          sys.exit(code)
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4

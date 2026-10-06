@@ -15,6 +15,7 @@ venv/
 coverage.xml
 htmlcov/
 .ruff_cache/
+.coveragerc.ci      # CI 在 mcp 不可用时临时生成的覆盖率配置
 
 # 工具产物
 *.log.tmp

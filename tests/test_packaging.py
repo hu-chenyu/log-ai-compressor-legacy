@@ -251,7 +251,13 @@ class TestGracefulDegradation:
             f"没提示正确的 extra:\n{combined}"
 
     def test_mcp_selfcheck_survives_missing_ai(self):
-        """MCP 自检工具不能因为 AI 层缺依赖就整个失败。"""
+        """MCP 自检工具不能因为 AI 层缺依赖就整个失败。
+
+        需要 mcp SDK 本身可用（Python 3.9 上它装不上，tests/test_mcp.py
+        已整体 importorskip，这里也必须同步跳过，否则是在测一个跑不了的
+        路径 —— run #159 就因此红过）。
+        """
+        pytest.importorskip("mcp", reason="mcp SDK 不可用（Python < 3.10）")
         r = _run(GUARD % {"blocked": ["httpx"]} + textwrap.dedent("""
             import asyncio, json
             from log_ai_compressor.mcp.server import server
@@ -264,15 +270,18 @@ class TestGracefulDegradation:
         """))
         assert "MCP_OK" in r.stdout, r.stdout + r.stderr
 
-    def test_web_health_survives_missing_ai(self):
-        """Web 健康检查同理：AI 不可用不能让整个服务 500。"""
+    def test_ai_status_degrades_without_httpx(self):
+        """AI 层缺 httpx 时，健康检查用的 _ai_status() 必须优雅降级。
+
+        这里**不走 TestClient**：starlette 的 TestClient 自己就 import httpx，
+        屏蔽掉它等于砸自己的脚（run #159 的第二个失败）。web.server 只在
+        懒导入时才碰 ai.client，所以直接调 _ai_status 才是真正的被测面。
+        """
         r = _run(GUARD % {"blocked": ["httpx"]} + textwrap.dedent("""
-            from fastapi.testclient import TestClient
-            from log_ai_compressor.web.server import create_app
-            c = TestClient(create_app())
-            body = c.get("/api/health").json()
-            assert body["ok"] is True
-            assert body["ai"]["available"] is False
+            from log_ai_compressor.web.server import _ai_status
+            st = _ai_status()
+            assert st["available"] is False
+            assert st["reason"]
             print("WEB_OK")
         """))
         assert "WEB_OK" in r.stdout, r.stdout + r.stderr
