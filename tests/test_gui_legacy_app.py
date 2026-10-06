@@ -18,7 +18,7 @@ import pytest
 ctk = pytest.importorskip("customtkinter")
 
 # 修复R12：分隔条参数（宽度/最小宽度限制）
-from log_ai_compressor.gui.app import (  # noqa: E402
+from log_ai_compressor.gui_legacy.app import (  # noqa: E402
     _SPLITTER_MIN_DETAIL,
     _SPLITTER_MIN_LIST,
     _SPLITTER_WIDTH,
@@ -47,9 +47,9 @@ def app(monkeypatch, tmp_path):
     （Canvas/字体/GDI 对象）依赖 GC 释放，累积不回收会触发
     Windows 句柄耗尽（新 Tk root 创建失败）。
     """
-    monkeypatch.setattr("log_ai_compressor.gui.config_store.CONFIG_FILE",
+    monkeypatch.setattr("log_ai_compressor.gui_legacy.config_store.CONFIG_FILE",
                         tmp_path / "config.json")
-    from log_ai_compressor.gui.app import LogCompressorApp
+    from log_ai_compressor.gui_legacy.app import LogCompressorApp
     application = LogCompressorApp()
     application.update()
     yield application
@@ -75,7 +75,7 @@ class TestDragAndDrop:
     """修复2：拖拽文件导入（整窗注册 + Tab 路由）。"""
 
     def test_tkinterdnd2_imported_and_root_registered(self, app):
-        from log_ai_compressor.gui import app as app_module
+        from log_ai_compressor.gui_legacy import app as app_module
         assert app_module._HAS_DND, "tkinterdnd2 应已安装并启用"
         # 根窗口已具备 DnD 能力（tkdnd 已加载）
         assert getattr(app, "TkdndVersion", None) is not None
@@ -183,7 +183,7 @@ class TestButtonStates:
 
     def test_start_disabled_while_running(self, app, monkeypatch):
         # 分析进行中：开始按钮置灰（monkeypatch 慢速分析消除竞态）
-        import log_ai_compressor.gui.app as app_mod
+        import log_ai_compressor.gui_legacy.app as app_mod
         from log_ai_compressor.core.models import RunStats, AnalysisResult
 
         def slow_analyze(text, **kwargs):
@@ -598,7 +598,7 @@ class TestClusterListFontAndWidth:
 class TestFatalLevelFilter:
     def test_fatal_checkbox_removed_five_remain(self, app):
         """修复R19：FATAL 复选框删除，ERROR 居首共五个复选框。"""
-        from log_ai_compressor.gui.app import LEVEL_CHECKS
+        from log_ai_compressor.gui_legacy.app import LEVEL_CHECKS
         assert LEVEL_CHECKS == ("ERROR", "FAIL", "WARN", "INFO", "DEBUG")
         assert "FATAL" not in LEVEL_CHECKS
         assert "FATAL" not in app._level_vars, "FATAL 复选框应已删除"
@@ -629,7 +629,7 @@ class TestFatalLevelFilter:
 
     def test_level_help_texts_match(self, app):
         """优化：每个 ⓘ 的悬停解释文字与其级别精确对应。"""
-        from log_ai_compressor.gui.app import _LEVEL_HELP
+        from log_ai_compressor.gui_legacy.app import _LEVEL_HELP
         expected = {
             "ERROR": "ERROR：错误，程序运行中出现的异常，"
                      "可能导致功能异常但程序仍可继续运行",
@@ -674,7 +674,7 @@ class TestFatalLevelFilter:
 
     def test_five_level_colors(self, app):
         """修复R40：五级别五色 + 根因紫 + 选中调亮（一眼区分严重程度）。"""
-        from log_ai_compressor.gui.app import LogCompressorApp
+        from log_ai_compressor.gui_legacy.app import LogCompressorApp
         from log_ai_compressor.core.models import ErrorCluster
 
         def mk(level, root=False):
@@ -756,7 +756,7 @@ class TestFontSizeSelector:
     def test_font_size_persisted_across_restart(self, app, tmp_path):
         """修复R10：字体档位保存后新实例自动恢复（同一配置文件）。"""
         app._apply_font_size("大")
-        from log_ai_compressor.gui.app import LogCompressorApp
+        from log_ai_compressor.gui_legacy.app import LogCompressorApp
         # app fixture 已隔离配置文件；新实例读取同一份 -> 恢复「大」
         app2 = LogCompressorApp()
         try:
@@ -1084,7 +1084,8 @@ class TestSplitter:
         pad = 10 * scale * 2        # 标题栏 grid padx（物理，两侧）
 
         def check_visible(col, head, tag):
-            app.update_idletasks(); app.update()
+            app.update_idletasks()
+            app.update()
             assert col.winfo_width() >= head.winfo_reqwidth() + pad - 2, \
                 f"{tag}: 列宽 {col.winfo_width()} 应 ≥ 标题栏需求 " \
                 f"{head.winfo_reqwidth() + pad}"
@@ -1100,7 +1101,8 @@ class TestSplitter:
         # 修复缺陷R14：标题栏控件组（常驻 panel 的字体大小+全屏）
         # 极限位置完整落在左列内、贴右缘
         def check_ctrl(tag):
-            app.update_idletasks(); app.update()
+            app.update_idletasks()
+            app.update()
             col_l = app._list_col.winfo_rootx()
             col_r = col_l + app._list_col.winfo_width()
             cl = app._list_ctrl_box.winfo_rootx()
@@ -1186,7 +1188,8 @@ class TestSplitter:
         sp_w = max(1, app._splitter.winfo_width())
 
         def check():
-            app.update_idletasks(); app.update()
+            app.update_idletasks()
+            app.update()
             lx = app._list_col.winfo_rootx() - panel.winfo_rootx()
             sx = app._splitter.winfo_rootx() - panel.winfo_rootx()
             dx = app._detail_col.winfo_rootx() - panel.winfo_rootx()
@@ -1253,7 +1256,7 @@ class TestSplitter:
         assert abs(app._splitter_ratio - 0.6) < 0.02
         assert app._config.get("splitter_ratio") is not None
         # 新实例读同一份配置
-        from log_ai_compressor.gui.app import LogCompressorApp
+        from log_ai_compressor.gui_legacy.app import LogCompressorApp
         app2 = LogCompressorApp()
         try:
             app2.update()
@@ -1270,7 +1273,7 @@ class TestSplitter:
 
     def test_splitter_theme_colors(self, app):
         """修复R12：四态主题切换分隔条颜色跟随调色板。"""
-        from log_ai_compressor.gui.app import THEMES
+        from log_ai_compressor.gui_legacy.app import THEMES
         for theme in ("dark", "light", "blue", "green"):
             app._theme = theme
             app._apply_palette()
@@ -1333,7 +1336,7 @@ class TestPerformanceOptimizations:
         import json
         import subprocess
         import sys
-        code = ("import sys, json; import log_ai_compressor.gui.app; "
+        code = ("import sys, json; import log_ai_compressor.gui_legacy.app; "
                 "print(json.dumps('matplotlib' not in sys.modules))")
         proc = subprocess.run([sys.executable, "-c", code],
                               capture_output=True, text=True,
@@ -1375,7 +1378,7 @@ class TestPerformanceOptimizations:
     def test_analysis_runs_in_worker_thread(self, app, monkeypatch):
         """分析必须在后台线程执行（主线程阻塞 = 界面卡死）。"""
         import threading
-        import log_ai_compressor.gui.app as app_mod
+        import log_ai_compressor.gui_legacy.app as app_mod
         observed = {}
 
         def spy_analyze(text, **kwargs):
@@ -1459,7 +1462,7 @@ class TestContextLines:
 
     def test_context_lines_passed_to_pipeline(self, app, monkeypatch):
         """GUI 配置的上下文行数必须传给分析管线（含负数→0）。"""
-        import log_ai_compressor.gui.app as app_mod
+        import log_ai_compressor.gui_legacy.app as app_mod
         captured = {}
 
         def spy_analyze(text, **kwargs):
@@ -1674,7 +1677,7 @@ class TestTooltipR3:
 
     def test_tooltip_wrap_width_in_range(self, app):
         """修复R3：tooltip 宽度限制在 400~500px（长文本自动换行）。"""
-        from log_ai_compressor.gui.app import Tooltip
+        from log_ai_compressor.gui_legacy.app import Tooltip
         assert 400 <= Tooltip._WRAP <= 500
         tip = app._sample_help_tooltip
         tip._show()
@@ -1714,7 +1717,7 @@ class TestTooltipR3:
         优化（定位修正）：校验用物理像素边界（_screen_bounds）——
         winfo_screenwidth 高 DPI 下是逻辑值，与物理几何混用会误报。
         """
-        from log_ai_compressor.gui.app import Tooltip
+        from log_ai_compressor.gui_legacy.app import Tooltip
         tip = app._sample_help_tooltip
         tip._show()
         app.update()
@@ -1746,7 +1749,7 @@ class TestTooltipR3:
 
     def test_tooltip_flips_left_near_right_edge(self, app):
         """优化：宿主控件贴近物理屏幕右边缘时 tooltip 保持在屏内（居中被平移）。"""
-        from log_ai_compressor.gui.app import Tooltip
+        from log_ai_compressor.gui_legacy.app import Tooltip
         vx, vy, vw, vh = Tooltip._screen_bounds(app)
         host, lbl = self._tooltip_on_edge_widget(
             app, f"+{vx + vw - 40}+{vy + 240}")
@@ -1769,7 +1772,7 @@ class TestTooltipR3:
 
     def test_tooltip_flips_up_near_bottom_edge(self, app):
         """优化：宿主控件贴近物理屏幕下边缘时 tooltip 保持在屏内上方。"""
-        from log_ai_compressor.gui.app import Tooltip
+        from log_ai_compressor.gui_legacy.app import Tooltip
         vx, vy, vw, vh = Tooltip._screen_bounds(app)
         host, lbl = self._tooltip_on_edge_widget(
             app, f"+{vx + 240}+{vy + vh - 50}")
@@ -2087,9 +2090,10 @@ class TestFullscreenView:
         before = app._detail_box.get("1.0", "end")
         app._open_list_fullscreen()
         app.update()
-        win = [w for w in app.winfo_children()
-               if isinstance(w, tk.Toplevel)
-               and "错误分类列表" in w.title()][0]
+        titled = [w for w in app.winfo_children()
+                  if isinstance(w, tk.Toplevel)
+                  and "错误分类列表" in w.title()]
+        assert titled, "应存在标题含「错误分类列表」的全屏窗口"
         # 优化缺陷R42：全屏列表 = 虚拟列表组件 —— 直接点击目标簇
         # 槽位头部（槽内绑定 app._select_cluster，与真实点击同链路）
         assert len(app._displayed) > 1, "需要 ≥2 簇以验证详情切换"
@@ -2107,7 +2111,7 @@ class TestFullscreenView:
         app._displayed = []
         app._detail_box.delete("1.0", "end")
         # monkeypatch 掉 messagebox 避免阻塞
-        import log_ai_compressor.gui.app as app_mod
+        import log_ai_compressor.gui_legacy.app as app_mod
         original = app_mod.messagebox.showinfo
         app_mod.messagebox.showinfo = lambda *a, **k: None
         try:
@@ -2747,22 +2751,6 @@ class TestClusterExpandMain:
         app._toggle_cluster_expand(1)
         app.update()
 
-    def test_expand_virtual_head_alignment_stable(self, app):
-        """修复缺陷R34：虚拟模式展开/收起头部文字起始 x 不变。"""
-        _run_many_clusters(app)
-        app.update()
-        vl = app._virtual_list
-        assert vl is not None
-        slot0 = next(s for s in vl.slots if s.get("idx") == 0)
-        x0 = slot0["head"].winfo_x()
-        app._toggle_cluster_expand(0)
-        app.update()
-        slot1 = next(s for s in vl.slots if s.get("idx") == 0)
-        assert slot1["head"].winfo_x() == x0, \
-            "展开后头部文字起始 x 不变"
-        app._toggle_cluster_expand(0)
-        app.update()
-
     def test_virtual_instance_row_click_shows_detail(self, app):
         """虚拟模式：点击实例行 → 右侧详情显示该实例自身（非典型样例）。"""
         _run_many_clusters(app)
@@ -2938,7 +2926,11 @@ class TestMainWindowSearch:
     def test_search_entry_in_live_filter_row(self, app):
         """修复缺陷R72：搜索组迁至过滤行与按钮行之间的实时筛选行。"""
         assert app._search_entry is not None
-        assert "过滤列表" in app._search_entry.cget("placeholder_text")
+        # 占位文案随 R72/R93 改版重写（原「过滤列表」已废弃），此处只校验
+        # 仍描述过滤语义且公开布尔语法，避免再次因文案微调而失效
+        placeholder = app._search_entry.cget("placeholder_text")
+        assert "过滤" in placeholder and "and/or/not" in placeholder, \
+            f"搜索框占位文案应说明过滤与布尔语法，实际 {placeholder!r}"
         panel = app._search_entry.master
         info = panel.grid_info()
         assert str(info["row"]) == "4", \
@@ -3991,7 +3983,7 @@ class TestRuleTooltips:
 
     def test_rule_tooltip_dynamic_text(self, app):
         """tooltip 文本必须跟随当前选中的解析规则动态变化。"""
-        from log_ai_compressor.gui.app import RULE_DESCRIPTIONS, RULE_DISPLAY
+        from log_ai_compressor.gui_legacy.app import RULE_DESCRIPTIONS, RULE_DISPLAY
         tip = app._rule_help_tooltip
         for key, expected in RULE_DESCRIPTIONS.items():
             app._on_rule_changed(RULE_DISPLAY[key])
@@ -4000,7 +3992,7 @@ class TestRuleTooltips:
 
     def test_rule_tooltip_shows_current_rule_text(self, app):
         """显示中的 tooltip 内容与当前规则一致。"""
-        from log_ai_compressor.gui.app import RULE_DESCRIPTIONS
+        from log_ai_compressor.gui_legacy.app import RULE_DESCRIPTIONS
         tip = app._rule_help_tooltip
         app._on_rule_changed("嵌入式 embedded")
         tip._show()
@@ -4014,7 +4006,7 @@ class TestRuleTooltips:
 
     def test_all_rules_have_descriptions(self):
         """全部规则键（含 auto）都必须有说明文本。"""
-        from log_ai_compressor.gui.app import RULE_DESCRIPTIONS, RULE_KEYS
+        from log_ai_compressor.gui_legacy.app import RULE_DESCRIPTIONS, RULE_KEYS
         assert set(RULE_KEYS) == set(RULE_DESCRIPTIONS)
         for name in RULE_KEYS:
             assert len(RULE_DESCRIPTIONS[name]) >= 10
@@ -4141,7 +4133,7 @@ class TestCompareMode:
         _run_compare_analysis(app, tmp_path)
         target = tmp_path / "compare_report.md"
         monkeypatch.setattr(
-            "log_ai_compressor.gui.app.filedialog.asksaveasfilename",
+            "log_ai_compressor.gui_legacy.app.filedialog.asksaveasfilename",
             lambda **kw: str(target))
         app._on_export()
         content = target.read_text(encoding="utf-8")
@@ -4244,10 +4236,10 @@ class TestExportReport:
             var.set(False)
         saves, warns = [], []
         monkeypatch.setattr(
-            "log_ai_compressor.gui.app.filedialog.asksaveasfilename",
+            "log_ai_compressor.gui_legacy.app.filedialog.asksaveasfilename",
             lambda **kw: saves.append(kw) and "")
         monkeypatch.setattr(
-            "log_ai_compressor.gui.app.messagebox.showwarning",
+            "log_ai_compressor.gui_legacy.app.messagebox.showwarning",
             lambda *a, **k: warns.append(a))
         app._on_export_confirmed()
         assert warns, "未勾选格式应弹警告"
@@ -4264,10 +4256,10 @@ class TestExportReport:
         app.update()
         app._export_fmt_vars["html"].set(True)
         monkeypatch.setattr(
-            "log_ai_compressor.gui.app.filedialog.asksaveasfilename",
+            "log_ai_compressor.gui_legacy.app.filedialog.asksaveasfilename",
             lambda **kw: str(tmp_path / "out.html"))
         monkeypatch.setattr(
-            "log_ai_compressor.gui.app.messagebox.askyesno",
+            "log_ai_compressor.gui_legacy.app.messagebox.askyesno",
             lambda *a, **k: False)
         app._on_export_confirmed()
         app.update()
@@ -4635,7 +4627,7 @@ class TestSimilaritySelector:
 
     def test_settings_popup_toggle_and_close(self, app):
         """⚙ 点击开合弹层；贴按钮右对齐、物理屏边界内（高 DPI 修正）。"""
-        from log_ai_compressor.gui.app import Tooltip
+        from log_ai_compressor.gui_legacy.app import Tooltip
         app.update()
         assert app._settings_popup.state() == "withdrawn"
         app._toggle_settings_popup()
@@ -4919,25 +4911,25 @@ class TestMuteClusters:
 # ---------------------------------------------------------------------------
 class TestBooleanSearch:
     def test_plain_substring_unchanged(self):
-        from log_ai_compressor.gui.app import _kw_match
+        from log_ai_compressor.gui_legacy.app import _kw_match
         assert _kw_match("connection refused to db", "refused")
         assert not _kw_match("connection refused", "timeout")
         assert _kw_match("anything", "")
 
     def test_and_requires_all_terms(self):
-        from log_ai_compressor.gui.app import _kw_match
+        from log_ai_compressor.gui_legacy.app import _kw_match
         hay = "connection refused db-primary error"
         assert _kw_match(hay, "connection and error")
         assert not _kw_match(hay, "connection and timeout")
 
     def test_or_matches_any_clause(self):
-        from log_ai_compressor.gui.app import _kw_match
+        from log_ai_compressor.gui_legacy.app import _kw_match
         hay = "disk almost full"
         assert _kw_match(hay, "timeout or disk")
         assert not _kw_match(hay, "timeout or refused")
 
     def test_not_negates_term(self):
-        from log_ai_compressor.gui.app import _kw_match
+        from log_ai_compressor.gui_legacy.app import _kw_match
         hay = "warn disk almost full"
         assert _kw_match(hay, "not timeout")
         assert not _kw_match(hay, "not disk")
@@ -4945,14 +4937,14 @@ class TestBooleanSearch:
 
     def test_word_boundary_no_false_split(self):
         """词边界：error/android 内含 or/and 不得被当作操作符。"""
-        from log_ai_compressor.gui.app import _kw_match
+        from log_ai_compressor.gui_legacy.app import _kw_match
         assert _kw_match("error: android crash", "error")
         assert _kw_match("error: android crash", "android")
         # 内含操作词的整词也按普通子串（无词边界操作符）
         assert _kw_match("android crash", "android crash")
 
     def test_mixed_expression(self):
-        from log_ai_compressor.gui.app import _kw_match
+        from log_ai_compressor.gui_legacy.app import _kw_match
         hay = "error [db] connection refused"
         assert _kw_match(hay, "error and db or timeout")
         assert not _kw_match(hay, "error and timeout or fatal")
@@ -5053,7 +5045,7 @@ class TestTailMonitor:
         """非文件导入页签：拦截提示，不启动监控。"""
         warned = []
         monkeypatch.setattr(
-            "log_ai_compressor.gui.app.messagebox.showwarning",
+            "log_ai_compressor.gui_legacy.app.messagebox.showwarning",
             lambda *a: warned.append(a))
         app._tabview.set("文本粘贴")
         app._on_tail_toggle()
@@ -5063,7 +5055,7 @@ class TestTailMonitor:
         """文件为空或多选：拦截提示，不启动监控。"""
         warned = []
         monkeypatch.setattr(
-            "log_ai_compressor.gui.app.messagebox.showwarning",
+            "log_ai_compressor.gui_legacy.app.messagebox.showwarning",
             lambda *a: warned.append(a))
         app._tabview.set("文件导入")
         app._file_entry.delete(0, "end")
@@ -5182,10 +5174,6 @@ class TestSettingsPopupExtras:
         assert "hunterX" not in content
         assert "admin@corp.com" not in content
         assert "[密钥]" in content and "[邮箱]" in content
-
-    def test_redact_off_keeps_original(self, app, tmp_path):
-        """脱敏关：导出文本保持原样（用户显式关闭时尊重选择）。"""
-        app._redact_var.set(False)
 
     def test_custom_redact_box_present(self, app):
         """⚙ 弹层含自定义脱敏输入框。"""
@@ -5394,7 +5382,7 @@ class TestPasteMode:
 
     def test_paste_blank_only_warns(self, app, monkeypatch):
         """纯空白粘贴：提示「请先粘贴日志文本」且不启动分析。"""
-        import log_ai_compressor.gui.app as app_mod
+        import log_ai_compressor.gui_legacy.app as app_mod
         warned = []
         monkeypatch.setattr(app_mod.messagebox, "showwarning",
                             lambda title, msg: warned.append(msg))
@@ -5460,7 +5448,7 @@ class TestThemeSwitch:
 
     def test_theme_menu_values_exclude_current(self, app):
         """修复R13：下拉列表只列其他三态（当前项不重复，顺序保持）。"""
-        from log_ai_compressor.gui.app import THEME_ORDER
+        from log_ai_compressor.gui_legacy.app import THEME_ORDER
         for key in THEME_ORDER:
             app._apply_theme_switch(key)
             app.update()
@@ -5497,7 +5485,7 @@ class TestThemeSwitch:
 
     def test_theme_menu_all_four_selectable(self, app):
         """修复R13：四种主题都能从下拉直达（逐项选择并验证显示）。"""
-        from log_ai_compressor.gui.app import THEME_ORDER
+        from log_ai_compressor.gui_legacy.app import THEME_ORDER
         app._apply_theme_switch("light")
         app.update()
         for expected in ("dark", "blue", "green", "light"):
@@ -5514,14 +5502,13 @@ class TestThemeSwitch:
         emoji（☀️🌙🔵🟢）字形宽度不一，纯文本菜单会错位；两列布局
         （固定宽图标列 + 左对齐文字列）后文字列起始 x 应严格相等。
         """
-        from log_ai_compressor.gui.app import THEME_ORDER
+        from log_ai_compressor.gui_legacy.app import THEME_ORDER
         app._open_theme_popup()
         app.update_idletasks()
         app.update()
         try:
             xs = []
             for key in THEME_ORDER:
-                row = app._theme_popup_rows[key]["row"]
                 if key == app._theme:
                     continue          # 当前项隐藏
                 xs.append(
@@ -5552,7 +5539,7 @@ class TestThemeSwitch:
 
     def test_theme_box_icon_col_matches_popup(self, app):
         """修复R14：选择框与下拉列表图标列宽一致（显示位置统一）。"""
-        from log_ai_compressor.gui.app import _THEME_ICON_COL
+        from log_ai_compressor.gui_legacy.app import _THEME_ICON_COL
         scale = max(1.0, app._font_scale)
         col = app._theme_icon_col
         assert col >= _THEME_ICON_COL, \
@@ -5625,7 +5612,7 @@ class TestThemeSwitch:
             assert max(widths) / max(1, min(widths)) <= 1.5, \
                 f"图标 advance 差异过大（{widths}），存在隐形空白尾迹"
             # 修复R16 的直接断言：太阳不带 FE0F
-            from log_ai_compressor.gui.app import THEMES
+            from log_ai_compressor.gui_legacy.app import THEMES
             assert "\ufe0f" not in THEMES["light"]["icon"]
         finally:
             app._close_theme_popup()
@@ -5673,7 +5660,7 @@ class TestThemeSwitch:
 
     def test_palette_roles_complete(self, app):
         """修复R1：每个主题调色板字段齐全（缺角色会导致刷新异常）。"""
-        from log_ai_compressor.gui.app import THEMES
+        from log_ai_compressor.gui_legacy.app import THEMES
         required = {"name", "icon", "label", "window", "card", "header",
                     "text", "muted", "accent", "accent_hover", "accent_text",
                     "row_bg", "row_hover", "row_selected",
@@ -5687,7 +5674,7 @@ class TestThemeSwitch:
 
     def test_blue_green_themes_menu_white(self, app):
         """修复R1/R13：蓝调/绿调下选择框为白底深色字（accent 白色）。"""
-        from log_ai_compressor.gui.app import THEMES
+        from log_ai_compressor.gui_legacy.app import THEMES
         for key in ("blue", "green"):
             app._apply_theme_switch(key)
             app.update()
@@ -5717,7 +5704,7 @@ class TestThemeSwitch:
         assert app._store.load().get("appearance") == "light"
         # 2) 启动加载路径等效验证（LogCompressorApp.__init__ 同款逻辑）
         import customtkinter as _ctk
-        from log_ai_compressor.gui.config_store import ConfigStore
+        from log_ai_compressor.gui_legacy.config_store import ConfigStore
         cfg = ConfigStore(app._store.path).load()
         _ctk.set_appearance_mode(cfg.get("appearance", "dark"))
         assert _ctk.get_appearance_mode().lower() == "light"

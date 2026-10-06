@@ -25,7 +25,9 @@ rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "PingFang SC",
                                "DejaVu Sans"]
 rcParams["axes.unicode_minus"] = False   # 负号字形兼容
 
-from log_ai_compressor.core.models import AnalysisResult
+# 必须置于下方业务 import 之前：rcParams 是模块级副作用，需在任何
+# Figure 创建前生效；此处 noqa 仅为放行 E402（非顶部 import）告警。
+from log_ai_compressor.core.models import AnalysisResult  # noqa: E402
 
 # 配色（暗色主题友好）
 _LEVEL_COLORS = {

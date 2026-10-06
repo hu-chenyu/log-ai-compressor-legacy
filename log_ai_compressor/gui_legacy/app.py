@@ -51,7 +51,6 @@ from log_ai_compressor.core.pipeline import (
 from log_ai_compressor.core.redact import redact_text
 from log_ai_compressor.rules.engine import detect_rule, stratified_sample
 from log_ai_compressor.export.reporters import (
-    SECTIONS_ALL,
     brief_summary,
     compare_to_markdown,
     to_html,
@@ -61,7 +60,7 @@ from log_ai_compressor.export.reporters import (
     token_report_line,
     token_status_text,
 )
-from log_ai_compressor.gui.config_store import ConfigStore, HistoryStore
+from log_ai_compressor.gui_legacy.config_store import ConfigStore, HistoryStore
 
 # 修复缺陷#9：matplotlib 导入约 0.4s，延迟到首次点击「统计图表」时
 # 才加载（charts 模块不再在 GUI 启动路径上被导入）。
@@ -2981,7 +2980,6 @@ class LogCompressorApp(_make_app_base()):
         right_c.place(x=0, y=host_y, relwidth=1, height=cvh)
         m2 = max(0, hi - lw)         # 左侧余量（拖右时视口为负）
         m1 = max(0, lw - lo)         # 右侧余量（拖左时视口越过右缘）
-        span = pw + m1 + m2
         right_c.configure(scrollregion=(-m2, 0, pw + m1, cvh),
                           xscrollincrement=1)
         # 修复缺陷R13（初始视口错位双线）：xview_moveto 的分数语义依赖
@@ -3466,7 +3464,7 @@ class LogCompressorApp(_make_app_base()):
         if left is None:
             return
         try:
-            lw, sp_w, pw = live["lw"], live["sp_w"], live["pw"]
+            lw, pw = live["lw"], live["pw"]
             live["clip"].place_configure(width=left)
             shift = lw - left               # 视口平移量（内容=屏幕+shift）
             right_c = live["right"]
@@ -5968,7 +5966,7 @@ class LogCompressorApp(_make_app_base()):
             rels = [_by_id[i].summary[:20]
                     for i in cluster.related_clusters if i in _by_id]
             if rels:
-                meta(f"【相关簇】" + "、".join(rels[:3])
+                meta("【相关簇】" + "、".join(rels[:3])
                      + ("…" if len(rels) > 3 else "") + "（模板相似 ≥80%）")
         # 优化缺陷R102：错误共现（±60s/±100行 同窗反复同现 ≥2 次的
         # 簇 —— "一起炸"直指同一根因，与"长得像"的相关簇互补）
@@ -6538,7 +6536,7 @@ class LogCompressorApp(_make_app_base()):
         if self._chart_window is not None and self._chart_window.winfo_exists():
             self._chart_window.destroy()
         # 懒加载：首次点击图表时才导入 matplotlib（修复缺陷#9）
-        from log_ai_compressor.gui.charts import (
+        from log_ai_compressor.gui_legacy.charts import (
             ChartsPanel,
             CompareChartsPanel,
         )
@@ -7175,7 +7173,7 @@ class LogCompressorApp(_make_app_base()):
         if left is None:
             return
         try:
-            lw, sp_w, pw = live["lw"], live["sp_w"], live["pw"]
+            lw, pw = live["lw"], live["pw"]
             live["clip"].place_configure(width=left)
             shift = lw - left               # 视口平移量（内容=屏幕+shift）
             right_c = live["right"]
