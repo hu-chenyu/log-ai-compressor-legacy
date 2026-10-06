@@ -54,12 +54,13 @@ class ExportRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # 文件浏览（本地工具不需要上传，直接让用户挑本机文件）
 # ---------------------------------------------------------------------------
-def _within_home(path: Path) -> bool:
-    try:
-        path.resolve().relative_to(HOME.resolve())
-        return True
-    except (ValueError, OSError):
-        return False
+# 关于范围限制：这里**刻意不限主目录**。早期版本锁死在用户主目录，结果
+# 三个问题：(1) 日志放在 D:\ / /var/log 的用户完全用不了浏览器；
+# (2) CI 检出目录本来就不在 HOME 里，测试在所有 runner 上都挂；
+# (3) 安全收益近乎为零 —— 服务只监听 127.0.0.1，且 /api/analyze 本来就
+# 接受任意路径，锁浏览器并不构成任何真正的边界。
+# 真要收紧，用 LOG_AI_FS_ROOT 环境变量限定一个根目录。
+FS_ROOT = os.environ.get("LOG_AI_FS_ROOT") or None
 
 
 def _fs_entry(p: Path) -> Dict[str, Any]:
@@ -91,11 +92,11 @@ def _human_size(n: int) -> str:
 
 
 def _list_dir(target: str) -> Dict[str, Any]:
-    path = Path(target).expanduser() if target else HOME
+    path = Path(target).expanduser() if target else (Path(FS_ROOT) if FS_ROOT else HOME)
     if not path.is_absolute():
-        path = HOME / path
-    if not _within_home(path):
-        raise HTTPException(400, "只能浏览用户主目录内的路径")
+        path = (Path(FS_ROOT) / path) if FS_ROOT else (HOME / path)
+    if FS_ROOT and not _within_root(path):
+        raise HTTPException(400, f"只能浏览 {FS_ROOT} 内的路径")
     if not path.exists():
         raise HTTPException(404, f"路径不存在：{path}")
     if not path.is_dir():
@@ -112,10 +113,22 @@ def _list_dir(target: str) -> Dict[str, Any]:
     return {
         "path": str(path),
         "parent": str(path.parent) if path.parent != path else "",
-        "can_go_up": _within_home(path.parent) and path.parent != path,
+        "can_go_up": not (FS_ROOT and not _within_root(path.parent)),
         "home": str(HOME),
+        "fs_root": FS_ROOT or "",
         "entries": items,
     }
+
+
+def _within_root(path: Path) -> bool:
+    """仅当设置了 LOG_AI_FS_ROOT 时才生效。"""
+    if not FS_ROOT:
+        return True
+    try:
+        path.resolve().relative_to(Path(FS_ROOT).resolve())
+        return True
+    except (ValueError, OSError):
+        return False
 
 
 # ---------------------------------------------------------------------------

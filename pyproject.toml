@@ -41,8 +41,11 @@ web = [
     "sse-starlette>=1.6",
 ]
 # MCP Server：让 Claude Code / Codex / mavis 等 Agent 调用本机日志
+# 环境标记是必须的：官方 mcp SDK 从 0.9.1 起要求 Python >= 3.10。
+# Python 3.9 上这一项会被 pip 跳过，tests/test_mcp.py 随之 importorskip 整体
+# 跳过 —— 核心引擎不受影响（只依赖 PyYAML）。
 mcp = [
-    "mcp>=1.0",
+    "mcp>=1.0; python_version >= '3.10'",
 ]
 # AI 解读（OpenAI 兼容端点 / 本地 Ollama 都走它）
 ai = [

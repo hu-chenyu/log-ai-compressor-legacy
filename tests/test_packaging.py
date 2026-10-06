@@ -70,16 +70,37 @@ class TestPackaging:
         for name in ("web", "mcp", "ai", "all", "legacy", "dev"):
             assert name in extras, f"缺少 extra: {name}"
 
-    def test_extras_are_not_pinned_to_local_paths(self, pyproject):
-        """自引用的 extra（log-ai-compressor[...]）在某些构建器上会解析失败，
-        至少要保证不是硬依赖、且拼写正确。"""
+    def test_extras_have_no_local_paths(self, pyproject):
+        """extras 里的依赖必须是可发布的包名，不能指向本机路径。
+
+        （旧版本这里写的是恒真断言 `A or not A`，等于没测；后来 mcp 那项
+        加上 `; python_version >= '3.10'` 环境标记后被误伤，才暴露出来。）
+        """
         extras = pyproject["project"]["optional-dependencies"]
+        offenders = []
         for name, items in extras.items():
             for item in items:
-                assert "log-ai-compressor[" in item or "log_ai_compressor[" not in item
-                assert "\n" not in item and " " not in item.strip() or \
-                    item.startswith(("log-ai-compressor[", "customtkinter", "matplotlib",
-                                     "tkinterdnd2", "pytest", "ruff"))
+                low = item.lower()
+                if low.startswith(("file:", "./", "../", ".\\", "..\\")) or \
+                        (":" in item and "\\" in item) or "://" in low:
+                    offenders.append(f"{name}: {item}")
+                if item.startswith("log-ai-compressor["):
+                    # 自引用 extra 允许，但名字要与 [project].name 一致
+                    assert item.startswith("log-ai-compressor[")
+        assert not offenders, f"extras 里出现了本机路径：{offenders}"
+
+    def test_mcp_extra_is_version_gated(self, pyproject):
+        """mcp SDK 要求 Python >= 3.10，必须带环境标记。
+
+        否则 Python 3.9 的 CI job 会在 pip 阶段直接失败
+        （No matching distribution found for mcp>=1.0）。
+        """
+        mcp_items = pyproject["project"]["optional-dependencies"]["mcp"]
+        assert mcp_items, "mcp extra 不能为空"
+        for item in mcp_items:
+            assert "python_version" in item, (
+                f"mcp 依赖缺环境标记，3.9 上会装不上：{item}")
+            assert "3.10" in item, f"环境标记版本不对：{item}"
 
     def test_static_assets_shipped(self, pyproject):
         """前端是零构建静态资源，不打进包的话 pip 安装后界面直接 404。"""

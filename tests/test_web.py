@@ -139,11 +139,16 @@ class TestFileBrowser:
         assert client.get("/api/fs/file",
                           params={"path": "C:/no/such.log"}).status_code == 404
 
-    def test_escape_home_rejected(self, client):
-        """浏览接口必须锁在用户主目录内，避免误扫整盘。"""
-        r = client.get("/api/fs/list", params={"path": "C:/Windows"})
-        assert r.status_code == 400
-        assert "主目录" in r.json()["detail"]
+    def test_missing_dir_404(self, client):
+        r = client.get("/api/fs/list", params={"path": "/no/such/dir/at/all"})
+        assert r.status_code == 404
+        assert "不存在" in r.json()["detail"]
+
+    def test_relative_path_resolves_against_home(self, client):
+        """相对路径按主目录解析 —— 行为必须跨平台一致。"""
+        r = client.get("/api/fs/list", params={"path": "."})
+        assert r.status_code == 200
+        assert Path(r.json()["path"]).is_absolute()
 
 
 # ---------------------------------------------------------------------------
