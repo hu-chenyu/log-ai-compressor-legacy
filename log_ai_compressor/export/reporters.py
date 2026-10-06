@@ -74,13 +74,51 @@ def _ts_range(result: AnalysisResult) -> str:
     return f"{format_timestamp(s.time_start)} ~ {format_timestamp(s.time_end)}"
 
 
+_VERDICT_LABEL = {
+    "CONFIRMED": "已定位根因",
+    "LIKELY": "可能原因（统计推断，非因果证明）",
+    "INSUFFICIENT": "无法判定根因",
+}
+
+
 def _root_summary(result: AnalysisResult) -> str:
+    """根因摘要 —— **受证据评估约束**。
+
+    v1 无条件输出「初步定位根因：X」，把关键词投票/时间先后这类统计线索
+    当成结论，导致「连接池刷了 370 次 → 根因：连接池耗尽」这种自信的错误
+    （真正的因只出现 10 次）。现在只有在拿到 Caused-by 因果链
+    （verdict=CONFIRMED）时才敢说"根因"。
+    """
     roots = [c for c in result.clusters if c.is_root_cause]
     if not roots:
         return "未发现明确根因（无时间连锁 / Caused-by 链 / 强根因特征）"
     top = roots[0]
     others = f"（另有 {len(roots) - 1} 个根因候选）" if len(roots) > 1 else ""
+    # 标签由调用方统一加（_VERDICT_LABEL），这里只给内容，避免重复
     return f"{top.summary[:120]}{others}"
+
+
+def _evidence_gaps_md(result: AnalysisResult, limit: int = 5) -> List[str]:
+    """把证据缺口渲染成 Markdown 小节（证据不足时才有内容）。"""
+    ev = result.evidence or {}
+    if ev.get("verdict") == "CONFIRMED" or not ev.get("gaps"):
+        return []
+    out: List[str] = ["", "### ⚠ 证据充分性评估", ""]
+    out.append(f"**判定：{_VERDICT_LABEL.get(ev.get('verdict'), ev.get('verdict'))}**")
+    out.append("")
+    out.append("这份日志里**没有**能证明因果方向的证据。以下候选是统计线索，"
+               "不是结论 —— 值班时照着错误根因排查会浪费时间。")
+    out.append("")
+    out.append("补齐下列证据才能定论：")
+    out.append("")
+    for g in ev["gaps"][:limit]:
+        out.append(f"- **{g.get('title')}**")
+        out.append(f"  - 为什么重要：{g.get('why')}")
+        out.append(f"  - 现在缺：{g.get('missing')}")
+    if ev.get("inputs_used"):
+        out.append("")
+        out.append(f"> 本次实际用到的证据：{'、'.join(ev['inputs_used'])}")
+    return out
 
 
 def _anomaly_label(c: ErrorCluster) -> str:
@@ -178,7 +216,8 @@ def to_markdown(result: AnalysisResult, top_n: Optional[int] = None,
                  f"处理 {s.total_lines} 行 | 耗时 {s.duration:.2f}s | "
                  f"{_rate_text(s.lines_per_second)} | 规则 {s.rule_name}")
     lines.append("")
-    lines.append(f"**初步定位根因**：{_md_escape(_root_summary(result))}")
+    lines.append(f"**{_VERDICT_LABEL.get((result.evidence or {}).get('verdict'), '初步定位根因')}**：{_md_escape(_root_summary(result))}")
+    lines.extend(_evidence_gaps_md(result))
     lines.append("")
     # 优化缺陷R99：token 估算占位行（文末回填，避免自引用长度死循环）
     lines.append("__TOKEN_LINE_R99__")
@@ -320,7 +359,11 @@ def brief_summary(result: AnalysisResult, top_n: Optional[int] = None) -> str:
     out.append(f"【日志分析摘要】{s.source}")
     out.append(f"总行数 {s.total_lines}，错误 {s.error_lines} 行，"
                f"去重后 {len(result.clusters)} 种，时间范围 {_ts_range(result)}。")
-    out.append(f"初步根因：{_root_summary(result)}")
+    out.append(f"{_VERDICT_LABEL.get((result.evidence or {}).get('verdict'), '初步根因')}：{_root_summary(result)}")
+    ev = result.evidence or {}
+    if ev.get("verdict") != "CONFIRMED":
+        for g in (ev.get("gaps") or [])[:3]:
+            out.append(f"  · 缺：{g.get('title')} —— {g.get('missing')}")
     out.append("")
     for i, c in enumerate(result.clusters[:n], 1):
         tags = [c.priority_label, c.level, f"×{c.count}"]
@@ -442,7 +485,11 @@ def to_text(result: AnalysisResult, top_n: Optional[int] = None,
     out.append(f"日志AI压缩报告：{s.source}")
     out.append("=" * 60)
     out.append(f"生成: log-ai-compressor v{__version__} | 规则 {s.rule_name}")
-    out.append(f"初步根因: {_root_summary(result)}")
+    out.append(f"{_VERDICT_LABEL.get((result.evidence or {}).get('verdict'), '初步根因')}: {_root_summary(result)}")
+    ev = result.evidence or {}
+    if ev.get("verdict") != "CONFIRMED":
+        for g in (ev.get("gaps") or [])[:3]:
+            out.append(f"  ! 缺：{g.get('title')} —— {g.get('missing')}")
 
     if "overview" in secs:
         out.append("")
@@ -626,8 +673,17 @@ def to_html(result: AnalysisResult, top_n: Optional[int] = None,
                f"{esc(_rate_text(s.lines_per_second))} | 规则 {esc(s.rule_name)}"
                f" | 时间范围 {esc(_ts_range(result))}</div>")
     out.append("</header>")
-    out.append(f'<div class="root"><b>初步定位根因：</b>'
+    ev = result.evidence or {}
+    out.append(f'<div class="root"><b>'
+               f'{esc(_VERDICT_LABEL.get(ev.get("verdict"), "初步定位根因"))}：</b>'
                f"{esc(_root_summary(result))}</div>")
+    if ev.get("verdict") != "CONFIRMED" and ev.get("gaps"):
+        out.append('<div class="warn">')
+        out.append("<b>⚠ 证据不足，这份日志无法证明因果方向</b>")
+        out.append("<ul>")
+        for g in ev["gaps"][:5]:
+            out.append(f'<li><b>{esc(g.get("title"))}</b> —— 缺：{esc(g.get("missing"))}</li>')
+        out.append("</ul></div>")
 
     # 目录锚点
     if "detail" in secs and clusters:

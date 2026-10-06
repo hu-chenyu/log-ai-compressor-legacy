@@ -29,7 +29,7 @@ import math
 import re
 import time
 from dataclasses import dataclass, field
-from typing import List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from log_ai_compressor.constants import (
     CASCADE_KEYWORDS,
@@ -51,6 +51,23 @@ BURST_WINDOW_SEC = 60.0        # 时间连锁判定窗口（秒）
 BURST_SIGMA = 3.0              # 集中爆发判定阈值（均值 + N 倍标准差）
 RARE_MIN_TOTAL = 10            # 触发罕见异常判定的最小错误总量
 STRONG_KEYWORD_SCORE = 3       # 强根因关键词命中数阈值
+
+# ---------------------------------------------------------------------------
+# 根因置信档位（v2）
+# ---------------------------------------------------------------------------
+# 为什么要有第三档 INSUFFICIENT
+# --------------------------
+# 只有 Caused-by 栈是解析器给出的**确定性因果方向**；关键词投票、时间
+# 连锁首发、消息互引用全是统计线索，只能说"指向这里"，不能说"就是这里"。
+# v1 把这些一视同仁地标成根因，于是会出现：连接池刷了 370 次 → 报告说
+# "根因：连接池耗尽"，而真正的因（连接建立失败）只出现 10 次、被当成
+# 噪音。**一个自信的错误根因，比没有根因更糟** —— 值班的人会照着它去查。
+#
+# 所以这里把"证据强度"显式化，拿不出因果链就明说证据不足，并列出还缺什么。
+CONF_CONFIRMED = "CONFIRMED"          # Caused-by 因果链直连
+CONF_LIKELY = "LIKELY"                # 有指向性但非直连（统计线索）
+CONF_INSUFFICIENT = "INSUFFICIENT"    # 只有共现/频率，不足以定因
+
 # 优化缺陷R75：异常检测强化参数（自持基线爆发 / 周期发作 / 新型错误）
 OWN_BASELINE_MIN_BUCKETS = 3   # 自持基线：簇内直方图最少桶数
 OWN_BASELINE_MIN_PEAK = 5      # 自持基线：峰值桶最小计数（防小样本虚报）
@@ -141,6 +158,10 @@ def analyze_clusters(result: AnalysisResult, *,
         _build_timelines(clusters, out_edges, by_id)
         _compute_priorities(clusters, result.stats)
         _sort_clusters(clusters)
+        # v2：证据充分性评估。必须放在 _mark_root_causes 之后（它读
+        # root_cause_confidence）、_compute_priorities 之后（它按
+        # priority 排候选），否则拿到的是未排序或未标档的中间态。
+        result.evidence = assess_evidence(clusters, result.stats).to_dict()
     result.stats.analysis_cost = time.perf_counter() - t0
     return result.stats.analysis_cost
 
@@ -389,9 +410,14 @@ def _mark_root_causes(clusters: List[ErrorCluster], *,
             c.is_root_cause = True
             if id(c) in caused_by_src:
                 c.root_cause_reason = "被 Caused-by 因果链指向"
+                # 唯一够得上 CONFIRMED 的证据：栈里有 Caused-by 直连，
+                # 因果方向由解析器确定，不是靠统计猜出来的
+                c.root_cause_confidence = CONF_CONFIRMED
             else:
                 c.root_cause_reason = (
                     f"因果链源头（{len(outs)} 个错误由其衍生）")
+                # 消息互引用建边是"模板词高包含"这类启发式，属指向非直连
+                c.root_cause_confidence = CONF_LIKELY
 
     # 2) 时间连锁：突发窗口内首发 + 加权根因分 >0
     windows = {}
@@ -407,6 +433,7 @@ def _mark_root_causes(clusters: List[ErrorCluster], *,
             earliest.is_root_cause = True
             earliest.root_cause_reason = (
                 "时间连锁源头（窗口内首发且含根因特征）")
+            earliest.root_cause_confidence = CONF_LIKELY
 
     # 3) 强关键词 / 4) 连锁衍生标记
     for c in ordered:
@@ -414,6 +441,8 @@ def _mark_root_causes(clusters: List[ErrorCluster], *,
                 and _keyword_score(c, weights) >= strong_keyword_score):
             c.is_root_cause = True
             c.root_cause_reason = "高频根因特征关键词"
+            # 关键词是统计线索，不构成因果证明
+            c.root_cause_confidence = CONF_LIKELY
         elif not c.is_root_cause and not c.root_cause_reason:
             ins = in_edges.get(id(c))
             if ins:
@@ -422,8 +451,234 @@ def _mark_root_causes(clusters: List[ErrorCluster], *,
                     f"疑似连锁衍生（上游：{src.summary[:40]}）")
             elif _has_cascade_keyword(c):
                 c.root_cause_reason = "疑似连锁衍生错误（被动失败特征）"
+            if not c.root_cause_confidence:
+                c.root_cause_confidence = CONF_INSUFFICIENT
+
+    # 兜底：任何未被判定过的簇，一律标 INSUFFICIENT（而不是留空）。
+    # 空字符串会让下游误以为"没结论"和"证据不足"是两回事。
+    for c in ordered:
+        if not c.root_cause_confidence:
+            c.root_cause_confidence = (
+                CONF_CONFIRMED if c.is_root_cause else CONF_INSUFFICIENT)
 
     return out_edges, by_id
+
+
+# ---------------------------------------------------------------------------
+# 证据缺口评估（v2 的核心差异化）
+# ---------------------------------------------------------------------------
+@dataclass
+class EvidenceGap:
+    """一条「还缺什么才能定论」。
+
+    Attributes:
+        code: 机器可读标识，前端与 Agent 据此做判断
+        title: 一句话标题
+        why: 补上它能定论的原因
+        missing: 现在具体缺的是什么
+        weight: 排序权重，越大越关键
+    """
+    code: str
+    title: str
+    why: str
+    missing: str
+    weight: int = 0
+
+
+@dataclass
+class EvidenceAssessment:
+    """整份分析的证据充分性判定。"""
+    verdict: str                      # CONFIRMED / LIKELY / INSUFFICIENT
+    confidence: str                   # 最高档（与 verdict 同值，保留冗余便于扩展）
+    headline: str                     # 一句话结论（含"我不知道"的可能）
+    can_conclude: bool                # 能否把某簇当根因输出
+    candidate_ids: List[int]
+    candidates: List[Dict[str, Any]]
+    gaps: List[EvidenceGap]
+    inputs_used: List[str]            # 实际用到的证据种类（可审计）
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "verdict": self.verdict,
+            "confidence": self.confidence,
+            "headline": self.headline,
+            "can_conclude": self.can_conclude,
+            "candidate_ids": self.candidate_ids,
+            "candidates": self.candidates,
+            "gaps": [
+                {"code": g.code, "title": g.title, "why": g.why,
+                 "missing": g.missing, "weight": g.weight}
+                for g in self.gaps
+            ],
+            "inputs_used": self.inputs_used,
+        }
+
+
+def assess_evidence(clusters: List[ErrorCluster], stats: RunStats) -> EvidenceAssessment:
+    """评估「凭这份日志能不能定论」，并列出证据缺口。
+
+    设计立场：**不猜**。拿不出因果链就说证据不足，并精确说明补什么才
+    能定论 —— 这比给一个自信的错误根因有用得多。
+
+    判定完全由确定性规则得出，不含任何模型推断。
+
+    Args:
+        clusters: 已完成智能分析的簇列表
+        stats: 本次运行的统计信息
+
+    Returns:
+        EvidenceAssessment：判定 + 候选 + 缺口清单
+    """
+    confirmed = [c for c in clusters if c.root_cause_confidence == CONF_CONFIRMED]
+    likely = [c for c in clusters
+              if c.is_root_cause and c.root_cause_confidence == CONF_LIKELY]
+
+    inputs_used: List[str] = []
+    gaps: List[EvidenceGap] = []
+
+    # --- 证据维度盘点：先把"手上有什么"记清楚，缺口才有对照 ---
+    has_timestamps = any(
+        c.first_seen is not None for c in clusters) or stats.time_start is not None
+    if has_timestamps:
+        inputs_used.append("时间戳（可做时序推断）")
+
+    has_stacks = any(
+        c.sample is not None and c.sample.entry is not None and c.sample.entry.stack
+        for c in clusters)
+    if has_stacks:
+        inputs_used.append("堆栈（可取 Caused-by 因果链）")
+
+    modules = {c.module for c in clusters if c.module}
+    multi_module = len(modules) > 1
+    if multi_module:
+        inputs_used.append(f"多模块覆盖（{len(modules)} 个模块）")
+
+    levels = {c.level for c in clusters}
+    multi_level = len(levels) > 1
+    if multi_level:
+        inputs_used.append(f"多级别分布（{'/'.join(sorted(levels))}）")
+
+    # --- 缺口 1：没有确定性因果链 ---
+    if not confirmed:
+        gaps.append(EvidenceGap(
+            code="no_causal_chain",
+            title="缺少确定性因果链",
+            why="Caused-by 栈是唯一能证明'谁引发谁'的证据；关键词命中和时间"
+                "先后都只是统计线索，无法排除巧合。",
+            missing=("带完整异常堆栈的日志（尤其是 Caused by: 链），"
+                     "或上游服务的日志"),
+            weight=100,
+        ))
+
+    # --- 缺口 2：单一模块，无法跨服务定因 ---
+    if not multi_module and clusters:
+        gaps.append(EvidenceGap(
+            code="single_module",
+            title="只覆盖单一模块",
+            why="根因常在下游（数据库/缓存/中间件），只看一个服务的日志，"
+                "分不清是它自己坏了，还是上游把压力传导下来了。",
+            missing="上下游服务的日志（同一时间窗），或带 request_id 的调用链",
+            weight=80,
+        ))
+
+    # --- 缺口 3：无时间戳，无法定先后 ---
+    if not has_timestamps:
+        gaps.append(EvidenceGap(
+            code="no_timestamps",
+            title="无时间戳",
+            why="没有时间顺序就无法判断谁是先发生的，"
+                "而根因必然早于其表现。",
+            missing="带时间戳的日志格式",
+            weight=70,
+        ))
+
+    # --- 缺口 4：无堆栈 ---
+    if not has_stacks:
+        gaps.append(EvidenceGap(
+            code="no_stacks",
+            title="无异常堆栈",
+            why="堆栈里的 Caused by 链是判断依赖关系最可靠的依据，"
+                "缺失时只能靠消息文本猜。",
+            missing="未做异常栈裁剪的完整堆栈",
+            weight=60,
+        ))
+
+    # --- 缺口 5：候选难分伯仲 ---
+    if likely:
+        top = max(likely, key=lambda c: c.priority)
+        rivals = [c for c in likely
+                  if c is not top and top.priority - c.priority < 5]
+        if rivals:
+            gaps.append(EvidenceGap(
+                code="ambiguous_candidates",
+                title="存在难以区分的并列候选",
+                why=("多个错误簇的证据强度接近，靠现有日志无法判断哪个是真因，"
+                     "强行选一个会误导排查方向。"),
+                missing=("能区分二者的额外信号（调用链先后、指标对比、"
+                         "变更时间点）"),
+                weight=90,
+            ))
+
+    # --- 缺口 6：缺少常态基线 ---
+    if stats.error_lines and stats.error_lines >= 10 and not has_timestamps:
+        gaps.append(EvidenceGap(
+            code="no_baseline",
+            title="无历史基线",
+            why="没有历史数据就无法区分'一直这么错'和'刚变坏'，"
+                "而后者才是故障。",
+            missing="同一服务此前的正常期日志",
+            weight=40,
+        ))
+
+    gaps.sort(key=lambda g: -g.weight)
+
+    candidates = sorted(confirmed or likely,
+                        key=lambda c: (-c.priority, -c.count))
+    cand_dicts = [{
+        "id": c.cluster_id,
+        "level": c.level,
+        "module": c.module or "",
+        "summary": c.summary,
+        "count": c.count,
+        "priority": c.priority,
+        "confidence": c.root_cause_confidence,
+        "reason": c.root_cause_reason,
+        "evidence_lines": [c.first_line, c.last_line],
+    } for c in candidates[:5]]
+
+    if confirmed:
+        verdict = CONF_CONFIRMED
+        top = confirmed[0]
+        headline = (f"已定位根因：{top.summary[:60]}"
+                    f"（Caused-by 因果链直连，见第 {top.first_line} 行）")
+        can_conclude = True
+    elif likely:
+        verdict = CONF_LIKELY
+        top = candidates[0] if candidates else None
+        name = top.summary[:50] if top else "（无）"
+        headline = (f"最可能的原因：{name} —— 但这是统计推断，"
+                    f"不是因果证明；下面列出了还缺什么才能定论。")
+        can_conclude = False
+    else:
+        verdict = CONF_INSUFFICIENT
+        headline = ("无法从这份日志判定根因。错误簇已归并统计，"
+                    "但缺少能证明因果方向的证据。")
+        can_conclude = False
+
+    if not candidates and verdict != CONF_INSUFFICIENT:
+        verdict = CONF_INSUFFICIENT
+        can_conclude = False
+
+    return EvidenceAssessment(
+        verdict=verdict,
+        confidence=verdict,
+        headline=headline,
+        can_conclude=can_conclude,
+        candidate_ids=[c.cluster_id for c in candidates],
+        candidates=cand_dicts,
+        gaps=gaps,
+        inputs_used=inputs_used,
+    )
 
 
 def _nearest_prior(ordered: Sequence[ErrorCluster],

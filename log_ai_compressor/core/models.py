@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from log_ai_compressor.constants import (
     GLOBAL_HIST_MAX_BUCKETS,
@@ -209,6 +209,12 @@ class ErrorCluster:
     # ---- 智能分析结果（analysis 模块填充）----
     is_root_cause: bool = False
     root_cause_reason: str = ""
+    # 置信档位（v2 新增）：把"是/不是根因"的二元判断升级为三档，
+    # 让工具在证据不足时**敢于不下结论** —— 见 analysis.assess_evidence。
+    #   CONFIRMED   确定性证据链直连（Caused-by 链 / 强关键词 ≥3）
+    #   LIKELY      有指向性但非直连（时间连锁首发 / 关键词 1~2）
+    #   INSUFFICIENT 只有时间共现或频率，没有因果链 —— 不应作为根因输出
+    root_cause_confidence: str = ""
     anomaly: str = ""                    # 'burst'/'periodic'/'novel'/'rare'/''
     priority: float = 0.0
     # 优化缺陷R77：优先级评分构成（详情面板判断依据，
@@ -293,6 +299,10 @@ class AnalysisResult:
         default_factory=lambda: TimeHistogram(max_buckets=GLOBAL_HIST_MAX_BUCKETS)
     )
     keywords: List[str] = field(default_factory=list)   # 高亮关键字
+    # v2：证据充分性评估（analysis.assess_evidence 填充）。
+    # 存 dict 而非 dataclass，避免 models ↔ analysis 循环 import；
+    # 结构见 analysis.EvidenceAssessment.to_dict。
+    evidence: Optional[Dict[str, Any]] = None
 
     @property
     def top_clusters(self) -> List[ErrorCluster]:

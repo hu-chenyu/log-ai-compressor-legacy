@@ -62,9 +62,22 @@ class TestMarkdown:
         assert "P0" in md or "P1" in md
 
     def test_root_cause_marked(self, result):
+        """根因措辞必须跟随证据判定（v2 契约）。
+
+        v1 无论证据强弱都写「初步定位根因」；现在只有拿到 Caused-by 因果链
+        （verdict=CONFIRMED）才敢用「根因」措辞，否则改为「可能原因（统计
+        推断，非因果证明）」并附缺口清单。
+        """
         md = to_markdown(result)
-        assert "初步定位根因" in md
-        assert "✔" in md or "根因" in md
+        verdict = result.evidence.get("verdict")
+        if verdict == "CONFIRMED":
+            assert "已定位根因" in md
+            assert "非因果证明" not in md
+        else:
+            assert "初步定位根因" not in md, "证据不足时不得使用『根因』措辞"
+            assert "非因果证明" in md
+            assert "证据充分性评估" in md
+        assert "✔" in md or "根因" in md or "可能原因" in md
 
     def test_stack_denoised_in_detail(self, result):
         md = to_markdown(result)
@@ -238,7 +251,11 @@ class TestTextAndBrief:
         brief = brief_summary(result, top_n=5)
         assert brief.startswith("【日志分析摘要】")
         assert "总行数" in brief
-        assert "初步根因" in brief
+        # 根因措辞跟随证据判定，见 test_root_cause_marked
+        if result.evidence.get("verdict") == "CONFIRMED":
+            assert "已定位根因" in brief
+        else:
+            assert "可能原因" in brief and "非因果证明" in brief
         # 简要摘要应显著短于完整报告（压缩比）
         assert len(brief) < len(to_markdown(result)) / 2
 

@@ -397,12 +397,50 @@ function listenJob(jobId, mode) {
 }
 
 /* ============================ 渲染：概览 ============================ */
+const VERDICT_LABEL = {
+  CONFIRMED: '已定位根因（Caused-by 因果链直连）',
+  LIKELY: '可能原因 —— 统计推断，非因果证明',
+  INSUFFICIENT: '无法判定根因',
+};
+
+/** 渲染证据充分性卡片：判定 + 缺口清单 + 实际用到的证据 */
+function renderVerdict(data) {
+  const card = $('#verdict-card');
+  const ev = data.evidence;
+  if (!ev || !ev.verdict) { card.hidden = true; return; }
+  const v = ev.verdict;
+  const gaps = (ev.gaps || []).map((g) => `
+    <li class="gap-item">
+      <div class="gap-title"><span class="w">权重 ${g.weight}</span>${esc(g.title)}</div>
+      <div class="gap-row"><b>为什么重要：</b>${esc(g.why)}</div>
+      <div class="gap-row"><b>现在缺：</b>${esc(g.missing)}</div>
+    </li>`).join('');
+  const used = (ev.inputs_used || []).length
+    ? `<div class="used-inputs">本次实际用到的证据：${esc(ev.inputs_used.join('、'))}</div>`
+    : '';
+  card.className = `verdict-card v-${v}`;
+  card.innerHTML = `
+    <div class="verdict-head">
+      <span class="verdict-badge">${esc(VERDICT_LABEL[v] || v)}</span>
+      ${ev.can_conclude
+        ? '<span class="pill pill-ok">可直接作为根因输出</span>'
+        : '<span class="pill pill-warn">不可作为根因输出</span>'}
+    </div>
+    <div class="verdict-text">${esc(ev.headline || '')}</div>
+    ${v === 'CONFIRMED' ? '' :
+      `<div class="verdict-note">补齐下列证据才能定论（按重要性排序）：</div>
+       <ul class="gap-list">${gaps}</ul>`}
+    ${used}`;
+  card.hidden = false;
+}
+
 function renderResult(data) {
   State.result = data;
   State.clusters = data.clusters || [];
   State.selected = -1;
   $('#compare-panel').hidden = true;
   $('#result-panel').hidden = false;
+  renderVerdict(data);
 
   const s = data.stats;
   const roots = (data.root_causes || []).length;
@@ -549,6 +587,10 @@ function renderClusterList() {
         <span class="lv lv-${esc(c.level)}">${esc(c.level)}</span>
         <span class="cnt">×${fmtInt(c.count)}</span>
         <span class="prio">P${esc(c.priority)}</span>
+        ${c.root_cause_confidence === 'CONFIRMED'
+          ? '<span class="prio" style="color:var(--ok)">已证实</span>'
+          : c.root_cause_confidence === 'LIKELY'
+          ? '<span class="prio" style="color:var(--warn)">未证实</span>' : ''}
         <span class="prio">行 ${fmtInt(c.first_line)}~${fmtInt(c.last_line)}</span>
       </div>
       <div class="cluster-summary">${esc(c.summary)}</div>

@@ -330,6 +330,8 @@ def cluster_to_dict(cluster: ErrorCluster, *,
         "count": cluster.count,
         "priority": cluster.priority,
         "priority_detail": cluster.priority_detail,
+        # v2：置信档位 CONFIRMED / LIKELY / INSUFFICIENT
+        "root_cause_confidence": cluster.root_cause_confidence or "",
         "first_line": cluster.first_line,
         "last_line": cluster.last_line,
         "first_seen": _fnum(cluster.first_seen),
@@ -432,6 +434,8 @@ def result_to_dict(result: AnalysisResult, *, top_n: Optional[int] = None,
             "truncated": stats.truncated,
             "limit_hit": stats.limit_hit,
         },
+        # v2：证据充分性评估（analysis.assess_evidence 产出）
+        "evidence": result.evidence or {},
         "keywords": list(result.keywords),
         "global_hist": _hist(result.global_hist),
         "root_causes": [
